@@ -41,7 +41,7 @@ function TestCaseCard({ tc, index }: { tc: TestCase; index: number }) {
         animationFillMode: "both",
       }}
     >
-      {/* Card header */}
+      {/* Card header section */}
       <div
         style={{
           padding: "20px 24px",
