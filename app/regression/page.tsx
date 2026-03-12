@@ -423,7 +423,7 @@ export default function RegressionPage() {
               margin: 0,
             }}
           >
-            Regression Impact Analyzer
+            Regression Analyzer
           </h1>
         </div>
         <p
