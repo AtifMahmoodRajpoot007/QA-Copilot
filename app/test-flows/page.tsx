@@ -1,0 +1,627 @@
+"use client";
+import { useState, useEffect, useCallback, useRef } from "react";
+import {
+    Repeat, Play, Square, Save, Trash2, Globe, MousePointer2, Type,
+    AlertCircle, CheckCircle2, XCircle, Clock, Library, Wand2, RotateCcw,
+    Zap, Terminal, Wifi, Eye, X, ChevronDown, ChevronUp, AlertTriangle,
+    Bot, Activity, History, BookOpen,
+} from "lucide-react";
+import LoadingSpinner from "@/components/ui/LoadingSpinner";
+
+interface FlowStep {
+    step: number; action: string; label?: string;
+    selector?: string; value?: string; url?: string;
+}
+interface TestFlow {
+    _id: string; name: string; targetUrl: string; steps: FlowStep[];
+    sourceType?: string; requirement?: string; description?: string;
+    createdBy?: string; createdAt: string;
+}
+interface StepResult {
+    step: number; label: string; action: string;
+    status: "PASS" | "FAIL" | "SKIP"; durationMs: number; error?: string;
+}
+interface FlowRun {
+    _id: string; flowId: string; flowName: string;
+    overallStatus: "PASS" | "FAIL" | "PARTIAL";
+    totalDurationMs: number; failedStep?: string;
+    consoleLogs: string[]; networkFailures: string[];
+    stepResults: StepResult[]; screenshot?: string;
+    aiAnalysis?: string; createdAt: string;
+}
+
+type Tab = "flows" | "recorder" | "results" | "failures";
+
+const ACTION_COLORS: Record<string, string> = {
+    navigate: "#3b82f6", click: "#8b5cf6", fill: "#10b981", type: "#10b981",
+    select: "#f59e0b", press: "#06b6d4", wait: "#64748b", verify: "#f43f5e",
+};
+
+function ActionBadge({ action }: { action: string }) {
+    const c = ACTION_COLORS[action] || "#64748b";
+    return <span style={{ fontSize: "0.62rem", fontWeight: "700", textTransform: "uppercase", padding: "2px 6px", borderRadius: "4px", background: `${c}20`, color: c, border: `1px solid ${c}30`, whiteSpace: "nowrap" }}>{action}</span>;
+}
+
+function StatusBadge({ status }: { status: string }) {
+    const m: Record<string, { color: string; bg: string; icon: any }> = {
+        PASS: { color: "#10b981", bg: "rgba(16,185,129,0.1)", icon: <CheckCircle2 size={11} /> },
+        FAIL: { color: "#ef4444", bg: "rgba(239,68,68,0.1)", icon: <XCircle size={11} /> },
+        PARTIAL: { color: "#f59e0b", bg: "rgba(245,158,11,0.1)", icon: <AlertTriangle size={11} /> },
+    };
+    const s = m[status] || m.FAIL;
+    return <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "0.7rem", fontWeight: "700", padding: "3px 8px", borderRadius: "20px", background: s.bg, color: s.color }}>{s.icon}{status}</span>;
+}
+
+export default function TestFlowsPage() {
+    const [tab, setTab] = useState<Tab>("flows");
+    // ── Flows tab ──
+    const [flows, setFlows] = useState<TestFlow[]>([]);
+    const [flowsLoading, setFlowsLoading] = useState(true);
+    const [runningId, setRunningId] = useState<string | null>(null);
+    const [runBanner, setRunBanner] = useState<{ flowName: string; status: string; msg: string } | null>(null);
+    const [detailFlow, setDetailFlow] = useState<TestFlow | null>(null);
+    // AI Convert modal
+    const [showConvert, setShowConvert] = useState(false);
+    const [convText, setConvText] = useState(""); const [convUrl, setConvUrl] = useState("");
+    const [convName, setConvName] = useState(""); const [convReq, setConvReq] = useState("");
+    const [convLoading, setConvLoading] = useState(false); const [convError, setConvError] = useState<string | null>(null);
+    // ── Recorder state ──
+    const [showNewTest, setShowNewTest] = useState(false);
+    const [recordUrl, setRecordUrl] = useState("");
+    const [sessionId, setSessionId] = useState<string | null>(null);
+    const [recordSteps, setRecordSteps] = useState<FlowStep[]>([]);
+    const [isRecording, setIsRecording] = useState(false);
+    const [screenshot, setScreenshot] = useState<string | null>(null);
+    const [recLoading, setRecLoading] = useState(false);
+    const [recError, setRecError] = useState<string | null>(null);
+    const [flowName, setFlowName] = useState("");
+    const pollingRef = useRef<NodeJS.Timeout | null>(null);
+    // ── Results tab ──
+    const [runs, setRuns] = useState<FlowRun[]>([]);
+    const [runsLoading, setRunsLoading] = useState(false);
+    const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
+    const [detailRun, setDetailRun] = useState<FlowRun | null>(null);
+    // ── Failures tab ──
+    const [failRuns, setFailRuns] = useState<FlowRun[]>([]);
+    const [failLoading, setFailLoading] = useState(false);
+    const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+    const [analyses, setAnalyses] = useState<Record<string, string>>({});
+
+    const fetchFlows = useCallback(async () => {
+        setFlowsLoading(true);
+        try { const r = await fetch("/api/flows"); const d = await r.json(); if (r.ok) setFlows(d.flows || []); }
+        finally { setFlowsLoading(false); }
+    }, []);
+
+    const fetchRuns = useCallback(async () => {
+        setRunsLoading(true);
+        try { const r = await fetch("/api/runs"); const d = await r.json(); if (r.ok) setRuns(d.runs || []); }
+        finally { setRunsLoading(false); }
+    }, []);
+
+    const fetchFails = useCallback(async () => {
+        setFailLoading(true);
+        try {
+            const r = await fetch("/api/runs"); const d = await r.json();
+            if (r.ok) {
+                const failed = (d.runs || []).filter((x: FlowRun) => x.overallStatus !== "PASS");
+                setFailRuns(failed);
+                // Pre-load stored analyses
+                const stored: Record<string, string> = {};
+                failed.forEach((x: FlowRun) => { if (x.aiAnalysis) stored[x._id] = x.aiAnalysis; });
+                setAnalyses(a => ({ ...a, ...stored }));
+            }
+        } finally { setFailLoading(false); }
+    }, []);
+
+    useEffect(() => {
+        if (tab === "flows") fetchFlows();
+        else if (tab === "results") fetchRuns();
+        else if (tab === "failures") fetchFails();
+        return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
+    }, [tab]);
+
+    // ── Run flow ──
+    async function handleRun(flow: TestFlow) {
+        setRunningId(flow._id); setRunBanner(null);
+        try {
+            const r = await fetch(`/api/test-flows/run/${flow._id}`, { method: "POST" });
+            const d = await r.json();
+            if (!r.ok) throw new Error(d.error || "Run failed");
+            setRunBanner({ flowName: flow.name, status: d.overallStatus, msg: d.overallStatus === "PASS" ? `All steps passed in ${(d.totalDurationMs / 1000).toFixed(1)}s.` : `${d.stepResults?.filter((s: StepResult) => s.status === "FAIL").length} step(s) failed.${d.failedStep ? ` First failure: "${d.failedStep}"` : ""}` });
+        } catch (e: any) { setRunBanner({ flowName: flow.name, status: "FAIL", msg: e.message }); }
+        finally { setRunningId(null); }
+    }
+
+    async function handleDelete(id: string) {
+        if (!confirm("Delete this flow?")) return;
+        await fetch(`/api/flows/${id}`, { method: "DELETE" });
+        setFlows(f => f.filter(x => x._id !== id));
+    }
+
+    async function handleConvert() {
+        if (!convText.trim() || !convUrl.trim()) { setConvError("Target URL and steps are required."); return; }
+        setConvLoading(true); setConvError(null);
+        try {
+            const r = await fetch("/api/ai/convert-testcase-to-flow", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ testSteps: convText, targetUrl: convUrl, flowName: convName || undefined, requirement: convReq || undefined }) });
+            const d = await r.json(); if (!r.ok) throw new Error(d.error || "Failed");
+            setShowConvert(false); setConvText(""); setConvUrl(""); setConvName(""); setConvReq("");
+            fetchFlows();
+        } catch (e: any) { setConvError(e.message); }
+        finally { setConvLoading(false); }
+    }
+
+    // ── Recording session ──
+    async function handleStartRecording() {
+        if (!recordUrl.trim()) return;
+        setRecLoading(true); setRecError(null);
+        try {
+            const r = await fetch("/api/flows/session/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: recordUrl }) });
+            const d = await r.json(); if (!r.ok) throw new Error(d.error || "Failed to start");
+            setShowNewTest(false);
+            setSessionId(d.sessionId); setScreenshot(d.screenshot); setIsRecording(true);
+            setRecordSteps([{ step: 1, action: "navigate", label: `Navigate to ${recordUrl}`, url: recordUrl }]);
+            pollingRef.current = setInterval(async () => {
+                const pr = await fetch(`/api/flows/session/${d.sessionId}`);
+                if (pr.ok) { const pd = await pr.json(); setRecordSteps(pd.steps); setScreenshot(pd.screenshot); }
+            }, 2000);
+        } catch (e: any) { setRecError(e.message); }
+        finally { setRecLoading(false); }
+    }
+
+    async function handleStopRecording() {
+        if (!sessionId) return; setRecLoading(true);
+        if (pollingRef.current) clearInterval(pollingRef.current);
+        try {
+            const r = await fetch(`/api/flows/session/${sessionId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "stop" }) });
+            const d = await r.json(); if (r.ok) { setRecordSteps(d.steps); setScreenshot(d.screenshot); }
+        } finally { setRecLoading(false); setSessionId(null); }
+    }
+
+    async function handleSaveRecording() {
+        if (!flowName.trim()) { setRecError("Please enter a flow name."); return; }
+        const r = await fetch("/api/flows/create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: flowName, targetUrl: recordUrl, steps: recordSteps, sourceType: "recorded" }) });
+        if (r.ok) { setIsRecording(false); setRecordSteps([]); setFlowName(""); setScreenshot(null); setSessionId(null); setTab("flows"); fetchFlows(); }
+        else { const d = await r.json(); setRecError(d.error || "Save failed"); }
+    }
+
+    // ── AI Analyze ──
+    async function handleAnalyze(runId: string) {
+        setAnalyzingId(runId);
+        try {
+            const r = await fetch("/api/test-flows/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ runId }) });
+            const d = await r.json(); if (!r.ok) throw new Error(d.error || "Analysis failed");
+            setAnalyses(a => ({ ...a, [runId]: d.analysis }));
+        } catch (e: any) { setAnalyses(a => ({ ...a, [runId]: `Error: ${e.message}` })); }
+        finally { setAnalyzingId(null); }
+    }
+
+    const fmtDate = (d: string) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    const fmtDateTime = (d: string) => new Date(d).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+
+    const TABS = [
+        { id: "flows" as Tab, label: "Tests", icon: BookOpen },
+        { id: "results" as Tab, label: "Executions", icon: History },
+        { id: "failures" as Tab, label: "Root Cause Analysis (RCA)", icon: AlertTriangle },
+    ] as const;
+
+    if (isRecording) {
+        return (
+            <div className="page-container animate-fade-in">
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "24px" }}>
+                    <div>
+                        <h1 style={{ fontSize: "1.6rem", fontWeight: "700", color: "var(--text-primary)", margin: 0, display: "flex", alignItems: "center", gap: "10px" }}><Globe size={24} color="#06b6d4" /> Recording Target: {recordUrl}</h1>
+                        <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", margin: "4px 0 0" }}>Interact with the browser to record steps automatically.</p>
+                    </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: "20px", alignItems: "start" }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                        <div className="glass-card" style={{ padding: "0", overflow: "hidden" }}>
+                            <div style={{ padding: "10px 18px", background: "rgba(255,255,255,0.03)", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: "6px" }}>
+                                    <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#ef4444", animation: "pulse 1.5s infinite" }} /> Recording Active
+                                </span>
+                                <span style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>{recordSteps.length} steps</span>
+                            </div>
+                            <div style={{ minHeight: "280px", background: "#000", position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                {recLoading && <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center" }}><LoadingSpinner size={32} /></div>}
+                                {screenshot ? <img src={`data:image/png;base64,${screenshot}`} alt="Browser preview" style={{ width: "100%", height: "auto", display: "block" }} /> : <span style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Initializing browser…</span>}
+                            </div>
+                        </div>
+                        <div className="glass-card" style={{ padding: "16px 20px" }}>
+                            <div style={{ fontSize: "0.78rem", color: sessionId ? "#10b981" : "var(--text-muted)", display: "flex", alignItems: "center", gap: "7px" }}>
+                                <div style={{ width: "7px", height: "7px", borderRadius: "50%", background: sessionId ? "#10b981" : "#64748b" }} />
+                                {sessionId ? "Browser connected — interact with it to record steps." : "Session ended. Save or discard the recording."}
+                            </div>
+                        </div>
+                    </div>
+                    <div style={{ position: "sticky", top: "24px", display: "flex", flexDirection: "column", gap: "14px" }}>
+                        <div className="glass-card" style={{ padding: "18px" }}>
+                            {sessionId ? (
+                                <button className="btn-primary" style={{ width: "100%", background: "#ef4444", marginBottom: "14px" }} onClick={handleStopRecording} disabled={recLoading}>
+                                    <Square size={13} fill="white" /> Stop Recording
+                                </button>
+                            ) : (
+                                <>
+                                    <input type="text" className="input-field" placeholder="Test Name (required)" value={flowName} onChange={e => { setFlowName(e.target.value); setRecError(null); }} style={{ marginBottom: "10px" }} />
+                                    <button className="btn-primary" style={{ width: "100%", background: "#059669", marginBottom: "10px" }} onClick={handleSaveRecording} disabled={!recordSteps.length || recLoading}><Save size={13} /> Save Test Setup</button>
+                                    <button className="btn-secondary" style={{ width: "100%" }} onClick={() => { setIsRecording(false); setRecordSteps([]); setScreenshot(null); setFlowName(""); }}>
+                                        <RotateCcw size={13} /> Discard Setup
+                                    </button>
+                                </>
+                            )}
+                            {recError && <div style={{ fontSize: "0.78rem", color: "#ef4444", marginTop: "8px" }}>{recError}</div>}
+                            <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.08em", marginTop: "14px", marginBottom: "8px" }}>Steps ({recordSteps.length})</div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "5px", maxHeight: "360px", overflowY: "auto" }}>
+                                {recordSteps.map((s, i) => (
+                                    <div key={i} style={{ padding: "7px 10px", borderRadius: "6px", background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)", display: "flex", alignItems: "center", gap: "7px" }}>
+                                        <span style={{ fontSize: "0.68rem", color: "var(--text-muted)", minWidth: "18px" }}>{s.step}.</span>
+                                        <ActionBadge action={s.action} />
+                                        <span style={{ fontSize: "0.74rem", color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.label || s.selector || s.url || ""}</span>
+                                    </div>
+                                ))}
+                                {recordSteps.length === 0 && <div style={{ textAlign: "center", padding: "16px", color: "var(--text-muted)", border: "1px dashed var(--border)", borderRadius: "6px", fontSize: "0.78rem" }}>Interact with the browser to record steps.</div>}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="page-container">
+            {/* Header */}
+            <div style={{ marginBottom: "24px", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+                <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "6px" }}>
+                        <div style={{ width: "40px", height: "40px", borderRadius: "12px", background: "linear-gradient(135deg,#8b5cf6,#06b6d4)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            <Activity size={20} color="white" />
+                        </div>
+                        <h1 style={{ fontSize: "1.6rem", fontWeight: "700", color: "var(--text-primary)", margin: 0 }}>Automated Tests</h1>
+                    </div>
+                    <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", margin: 0 }}>Record, manage, and run automated browser tests — with AI Root Cause Analysis (like Testim).</p>
+                </div>
+                <button className="btn-primary" style={{ background: "#06b6d4", padding: "0 20px", height: "42px" }} onClick={() => setShowNewTest(true)}>
+                    <Repeat size={15} fill="white" /> New Test
+                </button>
+            </div>
+
+            {/* Tabs */}
+            <div style={{ display: "flex", gap: "3px", background: "rgba(255,255,255,0.03)", padding: "4px", borderRadius: "12px", border: "1px solid var(--border)", marginBottom: "28px", overflowX: "auto" }}>
+                {TABS.map(({ id, label, icon: Icon }) => {
+                    const active = tab === id;
+                    return (
+                        <button key={id} onClick={() => setTab(id)} style={{ padding: "8px 16px", borderRadius: "8px", border: "none", cursor: "pointer", background: active ? "rgba(139,92,246,0.12)" : "transparent", color: active ? "#8b5cf6" : "var(--text-muted)", fontWeight: "600", fontSize: "0.82rem", display: "flex", alignItems: "center", gap: "6px", whiteSpace: "nowrap", transition: "all 0.15s" }}>
+                            <Icon size={13} />{label}
+                        </button>
+                    );
+                })}
+            </div>
+
+            {/* ═══════════════════════════════════════════════════════ TAB: FLOWS ══ */}
+            {tab === "flows" && (
+                <div className="animate-fade-in">
+                    <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginBottom: "20px" }}>
+                        <button className="btn-secondary" onClick={fetchFlows} style={{ height: "38px" }}><RotateCcw size={14} /> Refresh</button>
+                        <button className="btn-primary" style={{ height: "38px", background: "linear-gradient(135deg,#8b5cf6,#06b6d4)" }} onClick={() => setShowConvert(true)}><Wand2 size={14} /> AI Convert</button>
+                    </div>
+
+                    {runBanner && (
+                        <div className="animate-fade-in" style={{ marginBottom: "16px", padding: "12px 18px", borderRadius: "10px", background: runBanner.status === "PASS" ? "rgba(16,185,129,0.08)" : "rgba(239,68,68,0.08)", border: `1px solid ${runBanner.status === "PASS" ? "rgba(16,185,129,0.25)" : "rgba(239,68,68,0.25)"}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                                {runBanner.status === "PASS" ? <CheckCircle2 size={16} color="#10b981" /> : <AlertCircle size={16} color="#ef4444" />}
+                                <div><div style={{ fontWeight: "600", fontSize: "0.88rem" }}>{runBanner.flowName} — <StatusBadge status={runBanner.status} /></div><div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "2px" }}>{runBanner.msg}</div></div>
+                            </div>
+                            <button onClick={() => setRunBanner(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}><X size={14} /></button>
+                        </div>
+                    )}
+
+                    {flowsLoading ? <div style={{ display: "flex", justifyContent: "center", padding: "80px" }}><LoadingSpinner size={32} /></div>
+                        : flows.length === 0 ? (
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "14px", padding: "80px 20px", color: "var(--text-muted)" }}>
+                                <BookOpen size={32} style={{ opacity: 0.3 }} />
+                                <div><div style={{ fontWeight: "600", color: "var(--text-secondary)", marginBottom: "4px" }}>No test flows yet</div><div style={{ fontSize: "0.82rem" }}>Use the <strong>Recorder</strong> tab or <strong>AI Convert</strong> to create your first flow.</div></div>
+                            </div>
+                        ) : (
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: "14px" }}>
+                                {flows.map(flow => (
+                                    <div key={flow._id} className="glass-card animate-fade-in" style={{ padding: "0", overflow: "hidden" }}>
+                                        <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "10px" }}>
+                                            <div style={{ minWidth: 0 }}>
+                                                <div style={{ display: "flex", alignItems: "center", gap: "7px", flexWrap: "wrap" }}>
+                                                    <h3 style={{ fontSize: "0.92rem", fontWeight: "700", color: "var(--text-primary)", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "200px" }}>{flow.name}</h3>
+                                                    {flow.sourceType && <span style={{ fontSize: "0.6rem", fontWeight: "700", textTransform: "uppercase", padding: "2px 6px", borderRadius: "3px", background: flow.sourceType === "generated" ? "rgba(139,92,246,0.12)" : "rgba(6,182,212,0.12)", color: flow.sourceType === "generated" ? "#8b5cf6" : "#06b6d4" }}>{flow.sourceType}</span>}
+                                                </div>
+                                                <p style={{ fontSize: "0.72rem", color: "var(--text-muted)", margin: "3px 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><Globe size={10} style={{ display: "inline", marginRight: "3px" }} />{flow.targetUrl}</p>
+                                                {flow.createdBy && <p style={{ fontSize: "0.68rem", color: "var(--text-muted)", margin: "2px 0 0" }}>by {flow.createdBy} · {fmtDate(flow.createdAt)}</p>}
+                                            </div>
+                                            <span style={{ fontSize: "0.68rem", fontWeight: "700", background: "rgba(6,182,212,0.1)", color: "#06b6d4", padding: "2px 7px", borderRadius: "4px", whiteSpace: "nowrap", flexShrink: 0 }}>{flow.steps.length} steps</span>
+                                        </div>
+                                        {flow.requirement && <div style={{ padding: "7px 18px", background: "rgba(139,92,246,0.03)", borderBottom: "1px solid var(--border)", fontSize: "0.75rem", color: "var(--text-muted)" }}><span style={{ fontWeight: "600", color: "#8b5cf6", marginRight: "5px" }}>Req:</span>{flow.requirement.length > 80 ? flow.requirement.slice(0, 80) + "…" : flow.requirement}</div>}
+                                        <div style={{ padding: "8px 18px", display: "flex", flexDirection: "column", gap: "3px", maxHeight: "100px", overflowY: "auto" }}>
+                                            {flow.steps.slice(0, 4).map((s, i) => (
+                                                <div key={i} style={{ display: "flex", alignItems: "center", gap: "7px", fontSize: "0.76rem", color: "var(--text-secondary)" }}>
+                                                    <span style={{ color: "var(--text-muted)", minWidth: "16px" }}>{s.step}.</span>
+                                                    <ActionBadge action={s.action} />
+                                                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.label || s.selector || s.url || ""}</span>
+                                                </div>
+                                            ))}
+                                            {flow.steps.length > 4 && <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", paddingLeft: "23px" }}>+{flow.steps.length - 4} more</div>}
+                                        </div>
+                                        <div style={{ padding: "10px 18px", borderTop: "1px solid var(--border)", display: "flex", gap: "6px" }}>
+                                            <button className="btn-secondary" style={{ height: "30px", padding: "0 10px", fontSize: "0.76rem" }} onClick={() => setDetailFlow(flow)}><Eye size={12} /> View</button>
+                                            <button className="btn-primary" style={{ flex: 1, height: "30px", fontSize: "0.76rem", background: runningId === flow._id ? "var(--bg-secondary)" : "#059669" }} onClick={() => handleRun(flow)} disabled={runningId !== null}>
+                                                {runningId === flow._id ? <LoadingSpinner size={12} /> : <Play size={12} fill="white" />}
+                                                {runningId === flow._id ? "Running…" : "Run"}
+                                            </button>
+                                            <button className="btn-secondary" style={{ height: "30px", padding: "0 10px", color: "#ef4444" }} onClick={() => handleDelete(flow._id)}><Trash2 size={12} /></button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                </div>
+            )}
+
+            {/* Removed embedded recorder tab, replaced by full-screen conditional above */}
+
+            {/* ═══════════════════════════════════════════════════ TAB: RESULTS ══ */}
+            {tab === "results" && (
+                <div className="animate-fade-in">
+                    <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "20px" }}>
+                        <button className="btn-secondary" onClick={fetchRuns} style={{ height: "36px" }}><RotateCcw size={13} /> Refresh</button>
+                    </div>
+                    {runs.length > 0 && (
+                        <div style={{ display: "flex", gap: "10px", marginBottom: "20px", flexWrap: "wrap" }}>
+                            {[{ label: "Total", value: runs.length, color: "#64748b" }, { label: "Passed", value: runs.filter(r => r.overallStatus === "PASS").length, color: "#10b981" }, { label: "Failed", value: runs.filter(r => r.overallStatus === "FAIL").length, color: "#ef4444" }, { label: "Partial", value: runs.filter(r => r.overallStatus === "PARTIAL").length, color: "#f59e0b" }].map(({ label, value, color }) => (
+                                <div key={label} className="glass-card" style={{ padding: "10px 18px", display: "flex", alignItems: "center", gap: "10px", flex: 1, minWidth: "120px" }}>
+                                    <div style={{ fontSize: "1.4rem", fontWeight: "800", color }}>{value}</div>
+                                    <div style={{ fontSize: "0.74rem", color: "var(--text-muted)", fontWeight: "600" }}>{label}</div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    {runsLoading ? <div style={{ display: "flex", justifyContent: "center", padding: "80px" }}><LoadingSpinner size={32} /></div>
+                        : runs.length === 0 ? (
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "14px", padding: "80px", color: "var(--text-muted)" }}>
+                                <History size={32} style={{ opacity: 0.3 }} />
+                                <div><div style={{ fontWeight: "600", color: "var(--text-secondary)", marginBottom: "4px" }}>No runs yet</div><div style={{ fontSize: "0.82rem" }}>Run a flow from the <strong>Test Flows</strong> tab.</div></div>
+                            </div>
+                        ) : (
+                            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                {runs.map(run => (
+                                    <div key={run._id} className="glass-card animate-fade-in" style={{ padding: "0", overflow: "hidden" }}>
+                                        <div style={{ padding: "12px 18px", display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", cursor: "pointer" }} onClick={() => setExpandedRunId(expandedRunId === run._id ? null : run._id)}>
+                                            <StatusBadge status={run.overallStatus} />
+                                            <div style={{ flex: 1, minWidth: "160px" }}>
+                                                <div style={{ fontSize: "0.88rem", fontWeight: "600", color: "var(--text-primary)" }}>{run.flowName}</div>
+                                                {run.failedStep && <div style={{ fontSize: "0.72rem", color: "#f87171", marginTop: "1px" }}>Failed at: {run.failedStep}</div>}
+                                            </div>
+                                            <span style={{ fontSize: "0.76rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "4px" }}><Clock size={11} />{(run.totalDurationMs / 1000).toFixed(1)}s</span>
+                                            {run.consoleLogs?.length > 0 && <span style={{ fontSize: "0.68rem", padding: "2px 6px", borderRadius: "3px", background: "rgba(245,158,11,0.1)", color: "#f59e0b", fontWeight: "700" }}>{run.consoleLogs.length} console</span>}
+                                            {run.networkFailures?.length > 0 && <span style={{ fontSize: "0.68rem", padding: "2px 6px", borderRadius: "3px", background: "rgba(239,68,68,0.1)", color: "#ef4444", fontWeight: "700" }}>{run.networkFailures.length} network</span>}
+                                            <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", whiteSpace: "nowrap" }}>{fmtDateTime(run.createdAt)}</span>
+                                            <button className="btn-secondary" style={{ height: "26px", padding: "0 9px", fontSize: "0.72rem" }} onClick={e => { e.stopPropagation(); setDetailRun(run); }}><Eye size={11} /> Detail</button>
+                                            {expandedRunId === run._id ? <ChevronUp size={14} color="var(--text-muted)" /> : <ChevronDown size={14} color="var(--text-muted)" />}
+                                        </div>
+                                        {expandedRunId === run._id && (
+                                            <div style={{ padding: "0 18px 14px", borderTop: "1px solid var(--border)" }}>
+                                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginTop: "12px" }}>
+                                                    {[{ label: "Console Errors", items: run.consoleLogs, color: "#f59e0b" }, { label: "Network Failures", items: run.networkFailures, color: "#f87171" }].map(({ label, items, color }) => (
+                                                        <div key={label} style={{ padding: "10px", borderRadius: "7px", background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)" }}>
+                                                            <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", color, marginBottom: "7px" }}>{label} ({items?.length ?? 0})</div>
+                                                            {!items?.length ? <div style={{ fontSize: "0.74rem", color: "#10b981" }}>✓ None</div> :
+                                                                items.slice(0, 3).map((x, i) => <div key={i} style={{ fontSize: "0.7rem", color, fontFamily: "monospace", wordBreak: "break-word", paddingBottom: "3px" }}>{x}</div>)}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                </div>
+            )}
+
+            {/* ══════════════════════════════════════════════ TAB: FAILURE LOGS ══ */}
+            {tab === "failures" && (
+                <div className="animate-fade-in">
+                    <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "20px" }}>
+                        <button className="btn-secondary" onClick={fetchFails} style={{ height: "36px" }}><RotateCcw size={13} /> Refresh</button>
+                    </div>
+                    {failLoading ? <div style={{ display: "flex", justifyContent: "center", padding: "80px" }}><LoadingSpinner size={32} /></div>
+                        : failRuns.length === 0 ? (
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "14px", padding: "80px", color: "var(--text-muted)" }}>
+                                <CheckCircle2 size={32} style={{ opacity: 0.3 }} />
+                                <div><div style={{ fontWeight: "600", color: "var(--text-secondary)", marginBottom: "4px" }}>No failures!</div><div style={{ fontSize: "0.82rem" }}>All recorded runs have passed.</div></div>
+                            </div>
+                        ) : (
+                            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                                {failRuns.map(run => (
+                                    <div key={run._id} className="glass-card animate-fade-in" style={{ padding: "0", overflow: "hidden" }}>
+                                        {/* Run header */}
+                                        <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
+                                            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                                                <StatusBadge status={run.overallStatus} />
+                                                <div>
+                                                    <div style={{ fontWeight: "600", fontSize: "0.9rem", color: "var(--text-primary)" }}>{run.flowName}</div>
+                                                    {run.failedStep && <div style={{ fontSize: "0.72rem", color: "#f87171" }}>Failed at: "{run.failedStep}"</div>}
+                                                </div>
+                                            </div>
+                                            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                                <span style={{ fontSize: "0.74rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "4px" }}><Clock size={11} />{(run.totalDurationMs / 1000).toFixed(1)}s</span>
+                                                <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>{fmtDateTime(run.createdAt)}</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Debug info */}
+                                        <div style={{ padding: "12px 20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                                            <div style={{ padding: "10px 12px", borderRadius: "7px", background: "rgba(245,158,11,0.04)", border: "1px solid rgba(245,158,11,0.12)" }}>
+                                                <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", color: "#f59e0b", marginBottom: "7px", display: "flex", alignItems: "center", gap: "4px" }}><Terminal size={10} /> Console ({run.consoleLogs?.length ?? 0})</div>
+                                                {!run.consoleLogs?.length ? <div style={{ fontSize: "0.74rem", color: "#10b981" }}>✓ None</div> : run.consoleLogs.slice(0, 4).map((l, i) => <div key={i} style={{ fontSize: "0.69rem", color: "#fbbf24", fontFamily: "monospace", wordBreak: "break-word", paddingBottom: "3px", borderBottom: "1px solid rgba(245,158,11,0.07)" }}>{l}</div>)}
+                                            </div>
+                                            <div style={{ padding: "10px 12px", borderRadius: "7px", background: "rgba(239,68,68,0.04)", border: "1px solid rgba(239,68,68,0.12)" }}>
+                                                <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", color: "#f87171", marginBottom: "7px", display: "flex", alignItems: "center", gap: "4px" }}><Wifi size={10} /> Network ({run.networkFailures?.length ?? 0})</div>
+                                                {!run.networkFailures?.length ? <div style={{ fontSize: "0.74rem", color: "#10b981" }}>✓ None</div> : run.networkFailures.slice(0, 4).map((n, i) => <div key={i} style={{ fontSize: "0.69rem", color: "#f87171", fontFamily: "monospace", wordBreak: "break-word", paddingBottom: "3px", borderBottom: "1px solid rgba(239,68,68,0.07)" }}>{n}</div>)}
+                                            </div>
+                                        </div>
+
+                                        {/* AI Analysis */}
+                                        <div style={{ padding: "0 20px 16px" }}>
+                                            {analyses[run._id] ? (
+                                                <div style={{ padding: "14px 16px", borderRadius: "10px", background: "rgba(139,92,246,0.06)", border: "1px solid rgba(139,92,246,0.2)" }}>
+                                                    <div style={{ fontSize: "0.7rem", fontWeight: "700", textTransform: "uppercase", color: "#8b5cf6", marginBottom: "8px", display: "flex", alignItems: "center", gap: "5px" }}>
+                                                        <Bot size={12} /> AI Root Cause Analysis
+                                                    </div>
+                                                    <p style={{ fontSize: "0.82rem", color: "var(--text-secondary)", margin: 0, lineHeight: 1.65 }}>{analyses[run._id]}</p>
+                                                </div>
+                                            ) : (
+                                                <button className="btn-secondary" style={{ width: "100%", background: "rgba(139,92,246,0.06)", border: "1px solid rgba(139,92,246,0.2)", color: "#8b5cf6" }} onClick={() => handleAnalyze(run._id)} disabled={analyzingId === run._id}>
+                                                    {analyzingId === run._id ? <LoadingSpinner size={13} /> : <Bot size={13} />}
+                                                    {analyzingId === run._id ? "Analyzing with AI…" : "Analyze Failure with AI"}
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {/* Screenshot */}
+                                        {run.screenshot && (
+                                            <div style={{ padding: "0 20px 16px" }}>
+                                                <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.08em", marginBottom: "6px" }}>Final Screenshot</div>
+                                                <img src={`data:image/png;base64,${run.screenshot}`} alt="Failure screenshot" style={{ width: "100%", borderRadius: "7px", border: "1px solid var(--border)" }} />
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                </div>
+            )}
+
+            {/* ══════════════════════════════════════════════════════ MODALS ══════ */}
+
+            {/* AI Convert Modal */}
+            {showConvert && (
+                <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.72)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }} onClick={() => setShowConvert(false)}>
+                    <div className="glass-card animate-fade-in" style={{ width: "100%", maxWidth: "540px", padding: "26px" }} onClick={e => e.stopPropagation()}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "18px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "9px" }}><Wand2 size={16} color="#8b5cf6" /><h2 style={{ fontSize: "1rem", fontWeight: "700", color: "var(--text-primary)", margin: 0 }}>AI Convert Test Case to Flow</h2></div>
+                            <button onClick={() => setShowConvert(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}><X size={16} /></button>
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                            {[{ label: "Flow Name (optional)", val: convName, set: setConvName, ph: "e.g. Login Flow", type: "text" }, { label: "Target URL *", val: convUrl, set: setConvUrl, ph: "https://example.com", type: "url" }, { label: "Requirement (optional)", val: convReq, set: setConvReq, ph: "e.g. Verify login works", type: "text" }].map(({ label, val, set, ph, type }) => (
+                                <div key={label}><label style={{ display: "block", fontSize: "0.7rem", fontWeight: "700", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: "5px" }}>{label}</label><input type={type} className="input-field" placeholder={ph} value={val} onChange={e => set(e.target.value)} /></div>
+                            ))}
+                            <div><label style={{ display: "block", fontSize: "0.7rem", fontWeight: "700", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: "5px" }}>Test Steps *</label>
+                                <textarea className="input-field" rows={5} style={{ resize: "vertical" }} placeholder={"1. Open login page\n2. Enter email\n3. Enter password\n4. Click login\n5. Verify dashboard"} value={convText} onChange={e => setConvText(e.target.value)} /></div>
+                            {convError && <div style={{ display: "flex", alignItems: "center", gap: "7px", padding: "9px 12px", borderRadius: "7px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", fontSize: "0.8rem", color: "#ef4444" }}><AlertCircle size={13} />{convError}</div>}
+                            <div style={{ display: "flex", gap: "8px" }}>
+                                <button className="btn-secondary" style={{ flex: 1 }} onClick={() => setShowConvert(false)}>Cancel</button>
+                                <button className="btn-primary" style={{ flex: 1, background: "linear-gradient(135deg,#8b5cf6,#06b6d4)" }} onClick={handleConvert} disabled={convLoading}>{convLoading ? <LoadingSpinner size={13} /> : <Wand2 size={13} />}{convLoading ? "Converting…" : "Convert & Save"}</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Flow Detail Modal */}
+            {detailFlow && (
+                <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.72)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }} onClick={() => setDetailFlow(null)}>
+                    <div className="glass-card animate-fade-in" style={{ width: "100%", maxWidth: "500px", padding: "0", overflow: "hidden" }} onClick={e => e.stopPropagation()}>
+                        <div style={{ padding: "18px 22px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <div><h2 style={{ fontSize: "0.98rem", fontWeight: "700", color: "var(--text-primary)", margin: 0 }}>{detailFlow.name}</h2><p style={{ fontSize: "0.73rem", color: "var(--text-muted)", margin: "3px 0 0" }}>{detailFlow.targetUrl}</p></div>
+                            <button onClick={() => setDetailFlow(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}><X size={16} /></button>
+                        </div>
+                        <div style={{ padding: "14px 22px", display: "flex", flexDirection: "column", gap: "5px", maxHeight: "55vh", overflowY: "auto" }}>
+                            {detailFlow.steps.map((s, i) => (
+                                <div key={i} style={{ padding: "7px 11px", borderRadius: "6px", background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)", display: "flex", alignItems: "flex-start", gap: "8px" }}>
+                                    <span style={{ fontSize: "0.68rem", color: "var(--text-muted)", minWidth: "18px", marginTop: "2px" }}>{s.step}.</span>
+                                    <ActionBadge action={s.action} />
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: "0.8rem", fontWeight: "500", color: "var(--text-primary)" }}>{s.label || `${s.action} ${s.selector || s.url || ""}`}</div>
+                                        {(s.selector || s.url || s.value) && <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", fontFamily: "monospace", marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.url || s.selector || s.value}</div>}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <div style={{ padding: "12px 22px", borderTop: "1px solid var(--border)", display: "flex", gap: "8px" }}>
+                            <button className="btn-secondary" style={{ flex: 1 }} onClick={() => setDetailFlow(null)}>Close</button>
+                            <button className="btn-primary" style={{ flex: 1, background: "#059669" }} onClick={() => { handleRun(detailFlow); setDetailFlow(null); }} disabled={runningId !== null}><Play size={13} fill="white" /> Run Flow</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Run Detail Modal */}
+            {detailRun && (
+                <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }} onClick={() => setDetailRun(null)}>
+                    <div className="glass-card animate-fade-in" style={{ width: "100%", maxWidth: "680px", maxHeight: "85vh", overflow: "hidden", display: "flex", flexDirection: "column" }} onClick={e => e.stopPropagation()}>
+                        <div style={{ padding: "18px 22px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                                <h2 style={{ fontSize: "0.98rem", fontWeight: "700", color: "var(--text-primary)", margin: 0 }}>{detailRun.flowName}</h2>
+                                <StatusBadge status={detailRun.overallStatus} />
+                                <span style={{ fontSize: "0.73rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "3px" }}><Clock size={11} />{(detailRun.totalDurationMs / 1000).toFixed(2)}s</span>
+                            </div>
+                            <button onClick={() => setDetailRun(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}><X size={16} /></button>
+                        </div>
+                        <div style={{ flex: 1, overflowY: "auto", padding: "18px 22px", display: "flex", flexDirection: "column", gap: "14px" }}>
+                            <div>
+                                <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: "8px", letterSpacing: "0.08em" }}>Step Results</div>
+                                <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                                    {detailRun.stepResults?.map((s, i) => (
+                                        <div key={i} style={{ padding: "9px 13px", borderRadius: "7px", border: `1px solid ${s.status === "PASS" ? "rgba(16,185,129,0.15)" : "rgba(239,68,68,0.15)"}`, background: s.status === "PASS" ? "rgba(16,185,129,0.03)" : "rgba(239,68,68,0.03)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
+                                            <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
+                                                {s.status === "PASS" ? <CheckCircle2 size={13} color="#10b981" /> : <XCircle size={13} color="#ef4444" />}
+                                                <span style={{ fontSize: "0.82rem", fontWeight: "500", color: "var(--text-primary)" }}>{s.label || `Step ${s.step}`}</span>
+                                            </div>
+                                            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
+                                                <span style={{ fontSize: "0.68rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "3px" }}><Clock size={10} />{s.durationMs}ms</span>
+                                                <StatusBadge status={s.status} />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                                {[{ label: "Console Errors", items: detailRun.consoleLogs, color: "#f59e0b" }, { label: "Network Failures", items: detailRun.networkFailures, color: "#f87171" }].map(({ label, items, color }) => (
+                                    <div key={label} style={{ padding: "12px", borderRadius: "7px", background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)" }}>
+                                        <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", color, marginBottom: "7px" }}>{label} ({items?.length ?? 0})</div>
+                                        {!items?.length ? <div style={{ fontSize: "0.74rem", color: "#10b981" }}>✓ None</div> : items.map((x, i) => <div key={i} style={{ fontSize: "0.7rem", color, fontFamily: "monospace", wordBreak: "break-word", paddingBottom: "3px" }}>{x}</div>)}
+                                    </div>
+                                ))}
+                            </div>
+                            {detailRun.screenshot && <img src={`data:image/png;base64,${detailRun.screenshot}`} alt="Final state" style={{ width: "100%", borderRadius: "7px", border: "1px solid var(--border)" }} />}
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* New Test Modal (Popup) */}
+            {showNewTest && (
+                <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.72)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }} onClick={() => setShowNewTest(false)}>
+                    <div className="glass-card animate-fade-in" style={{ width: "100%", maxWidth: "460px", padding: "26px", textAlign: "center" }} onClick={e => e.stopPropagation()}>
+                        <div style={{ width: "50px", height: "50px", borderRadius: "14px", background: "rgba(6,182,212,0.1)", border: "1px solid rgba(6,182,212,0.2)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+                            <Globe size={24} color="#06b6d4" />
+                        </div>
+                        <h2 style={{ fontSize: "1.1rem", fontWeight: "700", color: "var(--text-primary)", marginBottom: "8px" }}>Setup New Test</h2>
+                        <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginBottom: "20px", lineHeight: 1.5 }}>Enter the starting URL for your test. A headless browser will open, allowing you to record your actions.</p>
+                        
+                        <div style={{ textAlign: "left", marginBottom: "20px" }}>
+                            <label style={{ display: "block", fontSize: "0.7rem", fontWeight: "700", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: "6px" }}>Starting URL</label>
+                            <input type="url" autoFocus className="input-field" placeholder="https://example.com" value={recordUrl} onChange={e => setRecordUrl(e.target.value)} onKeyDown={e => e.key === "Enter" && handleStartRecording()} />
+                            {recError && <div style={{ marginTop: "10px", padding: "8px 12px", borderRadius: "6px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", color: "#ef4444", fontSize: "0.78rem", display: "flex", alignItems: "center", gap: "6px" }}><AlertCircle size={12} />{recError}</div>}
+                        </div>
+                        
+                        <div style={{ display: "flex", gap: "8px" }}>
+                            <button className="btn-secondary" style={{ flex: 1 }} onClick={() => setShowNewTest(false)}>Cancel</button>
+                            <button className="btn-primary" style={{ flex: 1, background: "#06b6d4" }} onClick={handleStartRecording} disabled={!recordUrl.trim() || recLoading}>
+                                {recLoading ? <LoadingSpinner size={13} /> : <Play size={13} fill="white" />} {recLoading ? "Starting…" : "Create Test"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
