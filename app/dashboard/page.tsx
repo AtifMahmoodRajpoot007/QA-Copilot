@@ -2,15 +2,16 @@
 
 import { useEffect, useState } from "react";
 import {
+  LayoutDashboard,
   ClipboardList,
   Bug,
   GitMerge,
   Clock,
-  Zap,
   RefreshCw,
   Repeat,
   ShieldCheck,
   MonitorCheck,
+  PlayCircle,
 } from "lucide-react";
 
 interface DashboardStats {
@@ -176,7 +177,7 @@ export default function DashboardPage() {
               justifyContent: "center",
             }}
           >
-            <Zap size={22} color="white" fill="white" />
+            <LayoutDashboard size={22} color="white" />
           </div>
           <h1
             style={{
@@ -186,7 +187,7 @@ export default function DashboardPage() {
               margin: 0,
             }}
           >
-            Productivity Dashboard
+            Dashboard
           </h1>
           <button
             onClick={fetchStats}
@@ -268,10 +269,10 @@ export default function DashboardPage() {
           secondary={stats ? `${stats.smokeSuccessRate}% Success · ${stats.avgSmokeLoadTime}ms Avg` : undefined}
         />
         <StatCard
-          label="Flow Scripts"
+          label="Automated Tests"
           value={loading ? null : (stats?.totalRegressionScripts ?? 0)}
-          icon={Repeat}
-          color="#06b6d4"
+          icon={PlayCircle}
+          color="#10b981"
         />
         <StatCard
           label="AI Assistant"

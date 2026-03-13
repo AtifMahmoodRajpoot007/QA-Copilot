@@ -4,7 +4,7 @@ import {
     Repeat, Play, Square, Save, Trash2, Globe, MousePointer2, Type,
     AlertCircle, CheckCircle2, XCircle, Clock, Library, Wand2, RotateCcw,
     Zap, Terminal, Wifi, Eye, X, ChevronDown, ChevronUp, AlertTriangle,
-    Bot, Activity, History, BookOpen,
+    Bot, Activity, History, BookOpen, PlayCircle, ListChecks, ShieldCheck,
 } from "lucide-react";
 import LoadingSpinner from "@/components/ui/LoadingSpinner";
 
@@ -32,14 +32,83 @@ interface FlowRun {
 
 type Tab = "flows" | "recorder" | "results" | "failures";
 
-const ACTION_COLORS: Record<string, string> = {
-    navigate: "#3b82f6", click: "#8b5cf6", fill: "#10b981", type: "#10b981",
-    select: "#f59e0b", press: "#06b6d4", wait: "#64748b", verify: "#f43f5e",
+const ACTION_MAP: Record<string, { color: string; icon: any }> = {
+    navigate: { color: "#3b82f6", icon: Globe },
+    click: { color: "#8b5cf6", icon: MousePointer2 },
+    fill: { color: "#10b981", icon: Type },
+    type: { color: "#10b981", icon: Type },
+    select: { color: "#f59e0b", icon: ListChecks },
+    press: { color: "#06b6d4", icon: Terminal },
+    wait: { color: "#64748b", icon: Clock },
+    verify: { color: "#f43f5e", icon: ShieldCheck },
 };
 
 function ActionBadge({ action }: { action: string }) {
-    const c = ACTION_COLORS[action] || "#64748b";
-    return <span style={{ fontSize: "0.62rem", fontWeight: "700", textTransform: "uppercase", padding: "2px 6px", borderRadius: "4px", background: `${c}20`, color: c, border: `1px solid ${c}30`, whiteSpace: "nowrap" }}>{action}</span>;
+    const config = ACTION_MAP[action] || { color: "#64748b", icon: Activity };
+    const Icon = config.icon;
+    return (
+        <span style={{ 
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "5px",
+            fontSize: "0.65rem", 
+            fontWeight: "700", 
+            textTransform: "uppercase", 
+            padding: "3px 8px", 
+            borderRadius: "6px", 
+            background: `${config.color}15`, 
+            color: config.color, 
+            border: `1px solid ${config.color}30`, 
+            whiteSpace: "nowrap" 
+        }}>
+            <Icon size={11} strokeWidth={2.5} />
+            {action}
+        </span>
+    );
+}
+
+function StepCard({ step, index, compact = false }: { step: FlowStep; index: number; compact?: boolean }) {
+    return (
+        <div style={{ 
+            padding: compact ? "8px 12px" : "12px 16px", 
+            borderRadius: "10px", 
+            background: "rgba(255,255,255,0.02)", 
+            border: "1px solid var(--border)", 
+            display: "flex", 
+            alignItems: "center", 
+            gap: "12px",
+            transition: "all 0.2s"
+        }}>
+            <span style={{ fontSize: "0.75rem", fontWeight: "700", color: "var(--text-muted)", width: "18px" }}>{step.step || index + 1}</span>
+            <ActionBadge action={step.action} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ 
+                    fontSize: compact ? "0.78rem" : "0.85rem", 
+                    color: "var(--text-secondary)", 
+                    fontWeight: "500",
+                    overflow: "hidden", 
+                    textOverflow: "ellipsis", 
+                    whiteSpace: "nowrap" 
+                }}>
+                    {step.label || `${step.action} ${step.selector || step.url || ""}`}
+                </div>
+                {!compact && (step.selector || step.url || step.value) && (
+                    <div style={{ 
+                        fontSize: "0.7rem", 
+                        color: "var(--text-muted)", 
+                        fontFamily: "monospace", 
+                        marginTop: "4px",
+                        opacity: 0.7,
+                        overflow: "hidden", 
+                        textOverflow: "ellipsis", 
+                        whiteSpace: "nowrap" 
+                    }}>
+                        {step.url || step.selector || step.value}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -58,12 +127,8 @@ export default function TestFlowsPage() {
     const [flows, setFlows] = useState<TestFlow[]>([]);
     const [flowsLoading, setFlowsLoading] = useState(true);
     const [runningId, setRunningId] = useState<string | null>(null);
-    const [runBanner, setRunBanner] = useState<{ flowName: string; status: string; msg: string } | null>(null);
+    const [runBanner, setRunBanner] = useState<{ flowName: string; status: string; msg: string; consoleLogs?: string[]; networkFailures?: string[] } | null>(null);
     const [detailFlow, setDetailFlow] = useState<TestFlow | null>(null);
-    // AI Convert modal
-    const [showConvert, setShowConvert] = useState(false);
-    const [convText, setConvText] = useState(""); const [convUrl, setConvUrl] = useState("");
-    const [convName, setConvName] = useState(""); const [convReq, setConvReq] = useState("");
     const [convLoading, setConvLoading] = useState(false); const [convError, setConvError] = useState<string | null>(null);
     // ── Recorder state ──
     const [showNewTest, setShowNewTest] = useState(false);
@@ -75,6 +140,12 @@ export default function TestFlowsPage() {
     const [recLoading, setRecLoading] = useState(false);
     const [recError, setRecError] = useState<string | null>(null);
     const [flowName, setFlowName] = useState("");
+    const [liveRunActive, setLiveRunActive] = useState(false);
+    const [liveSessionId, setLiveSessionId] = useState<string | null>(null);
+    const [liveSteps, setLiveSteps] = useState<any[]>([]);
+    const [liveResults, setLiveResults] = useState<any[]>([]);
+    const [liveRunStatus, setLiveRunStatus] = useState<string>("RUNNING");
+    const [liveScreenshot, setLiveScreenshot] = useState<string | null>(null);
     const pollingRef = useRef<NodeJS.Timeout | null>(null);
     // ── Results tab ──
     const [runs, setRuns] = useState<FlowRun[]>([]);
@@ -123,32 +194,56 @@ export default function TestFlowsPage() {
 
     // ── Run flow ──
     async function handleRun(flow: TestFlow) {
-        setRunningId(flow._id); setRunBanner(null);
+        setRunningId(flow._id); setRunBanner({ flowName: flow.name, status: "RUNNING", msg: "Execution started in background..." });
         try {
             const r = await fetch(`/api/test-flows/run/${flow._id}`, { method: "POST" });
             const d = await r.json();
             if (!r.ok) throw new Error(d.error || "Run failed");
-            setRunBanner({ flowName: flow.name, status: d.overallStatus, msg: d.overallStatus === "PASS" ? `All steps passed in ${(d.totalDurationMs / 1000).toFixed(1)}s.` : `${d.stepResults?.filter((s: StepResult) => s.status === "FAIL").length} step(s) failed.${d.failedStep ? ` First failure: "${d.failedStep}"` : ""}` });
-        } catch (e: any) { setRunBanner({ flowName: flow.name, status: "FAIL", msg: e.message }); }
-        finally { setRunningId(null); }
+            
+            setLiveSessionId(d.sessionId);
+            setLiveSteps(flow.steps);
+            setLiveResults([]);
+            setLiveRunStatus("RUNNING");
+            setLiveScreenshot(null);
+            
+            pollingRef.current = setInterval(async () => {
+                const pr = await fetch(`/api/flows/session/${d.sessionId}`);
+                if (pr.ok) { 
+                    const pd = await pr.json(); 
+                    if (pd.runStatus !== "RUNNING") {
+                        clearInterval(pollingRef.current!);
+                        setRunBanner({ 
+                            flowName: flow.name, 
+                            status: pd.runStatus, 
+                            msg: pd.runStatus === "PASS" ? "Test completed successfully." : "Test failed. See results for details.",
+                            consoleLogs: pd.consoleLogs,
+                            networkFailures: pd.networkFailures
+                        });
+                        setRunningId(null);
+                        setTab("results");
+                        fetchRuns();
+                    }
+                    setLiveResults(pd.stepResults || []);
+                    setLiveRunStatus(pd.runStatus || "RUNNING");
+                    setLiveScreenshot(pd.latestScreenshot || null);
+                } else {
+                    // Browser closed
+                    clearInterval(pollingRef.current!);
+                    setRunningId(null);
+                    fetchRuns();
+                }
+            }, 1000);
+            
+        } catch (e: any) { 
+            setRunBanner({ flowName: flow.name, status: "FAIL", msg: e.message }); 
+            setRunningId(null);
+        }
     }
 
     async function handleDelete(id: string) {
         if (!confirm("Delete this flow?")) return;
         await fetch(`/api/flows/${id}`, { method: "DELETE" });
         setFlows(f => f.filter(x => x._id !== id));
-    }
-
-    async function handleConvert() {
-        if (!convText.trim() || !convUrl.trim()) { setConvError("Target URL and steps are required."); return; }
-        setConvLoading(true); setConvError(null);
-        try {
-            const r = await fetch("/api/ai/convert-testcase-to-flow", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ testSteps: convText, targetUrl: convUrl, flowName: convName || undefined, requirement: convReq || undefined }) });
-            const d = await r.json(); if (!r.ok) throw new Error(d.error || "Failed");
-            setShowConvert(false); setConvText(""); setConvUrl(""); setConvName(""); setConvReq("");
-            fetchFlows();
-        } catch (e: any) { setConvError(e.message); }
-        finally { setConvLoading(false); }
     }
 
     // ── Recording session ──
@@ -163,7 +258,15 @@ export default function TestFlowsPage() {
             setRecordSteps([{ step: 1, action: "navigate", label: `Navigate to ${recordUrl}`, url: recordUrl }]);
             pollingRef.current = setInterval(async () => {
                 const pr = await fetch(`/api/flows/session/${d.sessionId}`);
-                if (pr.ok) { const pd = await pr.json(); setRecordSteps(pd.steps); setScreenshot(pd.screenshot); }
+                if (pr.ok) { 
+                    const pd = await pr.json(); 
+                    setRecordSteps(pd.steps); 
+                    setScreenshot(pd.screenshot || pd.latestScreenshot); 
+                } else {
+                    // Browser closed
+                    clearInterval(pollingRef.current!);
+                    setSessionId(null);
+                }
             }, 2000);
         } catch (e: any) { setRecError(e.message); }
         finally { setRecLoading(false); }
@@ -183,6 +286,17 @@ export default function TestFlowsPage() {
         const r = await fetch("/api/flows/create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: flowName, targetUrl: recordUrl, steps: recordSteps, sourceType: "recorded" }) });
         if (r.ok) { setIsRecording(false); setRecordSteps([]); setFlowName(""); setScreenshot(null); setSessionId(null); setTab("flows"); fetchFlows(); }
         else { const d = await r.json(); setRecError(d.error || "Save failed"); }
+    }
+
+    async function handleStopLiveRun() {
+        if (!liveSessionId) return;
+        if (pollingRef.current) clearInterval(pollingRef.current);
+        try {
+            await fetch(`/api/flows/session/${liveSessionId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "stop" }) });
+        } catch(e){}
+        setLiveRunActive(false); 
+        setLiveSessionId(null);
+        fetchRuns();
     }
 
     // ── AI Analyze ──
@@ -253,13 +367,9 @@ export default function TestFlowsPage() {
                             )}
                             {recError && <div style={{ fontSize: "0.78rem", color: "#ef4444", marginTop: "8px" }}>{recError}</div>}
                             <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.08em", marginTop: "14px", marginBottom: "8px" }}>Steps ({recordSteps.length})</div>
-                            <div style={{ display: "flex", flexDirection: "column", gap: "5px", maxHeight: "360px", overflowY: "auto" }}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "360px", overflowY: "auto", paddingRight: "4px" }}>
                                 {recordSteps.map((s, i) => (
-                                    <div key={i} style={{ padding: "7px 10px", borderRadius: "6px", background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)", display: "flex", alignItems: "center", gap: "7px" }}>
-                                        <span style={{ fontSize: "0.68rem", color: "var(--text-muted)", minWidth: "18px" }}>{s.step}.</span>
-                                        <ActionBadge action={s.action} />
-                                        <span style={{ fontSize: "0.74rem", color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.label || s.selector || s.url || ""}</span>
-                                    </div>
+                                    <StepCard key={i} step={s} index={i} compact />
                                 ))}
                                 {recordSteps.length === 0 && <div style={{ textAlign: "center", padding: "16px", color: "var(--text-muted)", border: "1px dashed var(--border)", borderRadius: "6px", fontSize: "0.78rem" }}>Interact with the browser to record steps.</div>}
                             </div>
@@ -270,14 +380,17 @@ export default function TestFlowsPage() {
         );
     }
 
+    // Live Run removed per request
+
+
     return (
         <div className="page-container">
             {/* Header */}
             <div style={{ marginBottom: "24px", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
                 <div>
                     <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "6px" }}>
-                        <div style={{ width: "40px", height: "40px", borderRadius: "12px", background: "linear-gradient(135deg,#8b5cf6,#06b6d4)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            <Activity size={20} color="white" />
+                        <div style={{ width: "40px", height: "40px", borderRadius: "12px", background: "linear-gradient(135deg,#10b981,#06b6d4)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            <PlayCircle size={20} color="white" />
                         </div>
                         <h1 style={{ fontSize: "1.6rem", fontWeight: "700", color: "var(--text-primary)", margin: 0 }}>Automated Tests</h1>
                     </div>
@@ -304,25 +417,44 @@ export default function TestFlowsPage() {
             {tab === "flows" && (
                 <div className="animate-fade-in">
                     <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginBottom: "20px" }}>
-                        <button className="btn-secondary" onClick={fetchFlows} style={{ height: "38px" }}><RotateCcw size={14} /> Refresh</button>
-                        <button className="btn-primary" style={{ height: "38px", background: "linear-gradient(135deg,#8b5cf6,#06b6d4)" }} onClick={() => setShowConvert(true)}><Wand2 size={14} /> AI Convert</button>
+                        <button className="btn-secondary" onClick={fetchFlows} style={{ height: "38px" }}><RotateCcw size={14} /> Refresh List</button>
                     </div>
 
                     {runBanner && (
-                        <div className="animate-fade-in" style={{ marginBottom: "16px", padding: "12px 18px", borderRadius: "10px", background: runBanner.status === "PASS" ? "rgba(16,185,129,0.08)" : "rgba(239,68,68,0.08)", border: `1px solid ${runBanner.status === "PASS" ? "rgba(16,185,129,0.25)" : "rgba(239,68,68,0.25)"}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                                {runBanner.status === "PASS" ? <CheckCircle2 size={16} color="#10b981" /> : <AlertCircle size={16} color="#ef4444" />}
-                                <div><div style={{ fontWeight: "600", fontSize: "0.88rem" }}>{runBanner.flowName} — <StatusBadge status={runBanner.status} /></div><div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "2px" }}>{runBanner.msg}</div></div>
+                        <div className="animate-fade-in" style={{ marginBottom: "20px", padding: "16px 20px", borderRadius: "12px", background: runBanner.status === "PASS" ? "rgba(16,185,129,0.06)" : "rgba(239,68,68,0.06)", border: `1px solid ${runBanner.status === "PASS" ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)"}`, position: "relative" }}>
+                            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "10px" }}>
+                                <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+                                    {runBanner.status === "PASS" ? <CheckCircle2 size={20} color="#10b981" /> : <AlertCircle size={20} color="#ef4444" />}
+                                    <div>
+                                        <div style={{ fontWeight: "700", fontSize: "0.95rem", color: "var(--text-primary)" }}>{runBanner.flowName} — <StatusBadge status={runBanner.status} /></div>
+                                        <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "3px" }}>{runBanner.msg}</div>
+                                    </div>
+                                </div>
+                                <button onClick={() => setRunBanner(null)} style={{ background: "rgba(255,255,255,0.05)", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: "5px", borderRadius: "6px" }}><X size={15} /></button>
                             </div>
-                            <button onClick={() => setRunBanner(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}><X size={14} /></button>
+
+                            {runBanner.status !== "PASS" && (runBanner.consoleLogs?.length || runBanner.networkFailures?.length) && (
+                                <div style={{ marginTop: "14px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", paddingTop: "14px", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+                                    <div style={{ padding: "10px", borderRadius: "8px", background: "rgba(245,158,11,0.04)", border: "1px solid rgba(245,158,11,0.12)" }}>
+                                        <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", color: "#f59e0b", marginBottom: "6px", display: "flex", alignItems: "center", gap: "4px" }}><Terminal size={10} /> Console Errors</div>
+                                        {!runBanner.consoleLogs?.length ? <div style={{ fontSize: "0.74rem", color: "#10b981" }}>✓ No logs</div> : runBanner.consoleLogs.slice(0, 3).map((l, i) => <div key={i} style={{ fontSize: "0.68rem", color: "#fbbf24", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l}</div>)}
+                                    </div>
+                                    <div style={{ padding: "10px", borderRadius: "8px", background: "rgba(239,68,68,0.04)", border: "1px solid rgba(239,68,68,0.12)" }}>
+                                        <div style={{ fontSize: "0.68rem", fontWeight: "700", textTransform: "uppercase", color: "#f87171", marginBottom: "6px", display: "flex", alignItems: "center", gap: "4px" }}><Wifi size={10} /> Network Failures</div>
+                                        {!runBanner.networkFailures?.length ? <div style={{ fontSize: "0.74rem", color: "#10b981" }}>✓ No issues</div> : runBanner.networkFailures.slice(0, 3).map((n, i) => <div key={i} style={{ fontSize: "0.68rem", color: "#f87171", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n}</div>)}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
 
                     {flowsLoading ? <div style={{ display: "flex", justifyContent: "center", padding: "80px" }}><LoadingSpinner size={32} /></div>
                         : flows.length === 0 ? (
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "14px", padding: "80px 20px", color: "var(--text-muted)" }}>
-                                <BookOpen size={32} style={{ opacity: 0.3 }} />
-                                <div><div style={{ fontWeight: "600", color: "var(--text-secondary)", marginBottom: "4px" }}>No test flows yet</div><div style={{ fontSize: "0.82rem" }}>Use the <strong>Recorder</strong> tab or <strong>AI Convert</strong> to create your first flow.</div></div>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: "16px", padding: "80px 20px", color: "var(--text-muted)", textAlign: "center" }}>
+                                <div style={{ width: "64px", height: "64px", borderRadius: "20px", background: "rgba(255,255,255,0.03)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                    <PlayCircle size={32} style={{ opacity: 0.3 }} />
+                                </div>
+                                <div><div style={{ fontWeight: "700", color: "var(--text-primary)", fontSize: "1.1rem", marginBottom: "4px" }}>No test flows yet</div><div style={{ fontSize: "0.88rem" }}>Use the <strong>New Test</strong> button to record your first automated flow.</div></div>
                             </div>
                         ) : (
                             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: "14px" }}>
@@ -340,15 +472,11 @@ export default function TestFlowsPage() {
                                             <span style={{ fontSize: "0.68rem", fontWeight: "700", background: "rgba(6,182,212,0.1)", color: "#06b6d4", padding: "2px 7px", borderRadius: "4px", whiteSpace: "nowrap", flexShrink: 0 }}>{flow.steps.length} steps</span>
                                         </div>
                                         {flow.requirement && <div style={{ padding: "7px 18px", background: "rgba(139,92,246,0.03)", borderBottom: "1px solid var(--border)", fontSize: "0.75rem", color: "var(--text-muted)" }}><span style={{ fontWeight: "600", color: "#8b5cf6", marginRight: "5px" }}>Req:</span>{flow.requirement.length > 80 ? flow.requirement.slice(0, 80) + "…" : flow.requirement}</div>}
-                                        <div style={{ padding: "8px 18px", display: "flex", flexDirection: "column", gap: "3px", maxHeight: "100px", overflowY: "auto" }}>
-                                            {flow.steps.slice(0, 4).map((s, i) => (
-                                                <div key={i} style={{ display: "flex", alignItems: "center", gap: "7px", fontSize: "0.76rem", color: "var(--text-secondary)" }}>
-                                                    <span style={{ color: "var(--text-muted)", minWidth: "16px" }}>{s.step}.</span>
-                                                    <ActionBadge action={s.action} />
-                                                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.label || s.selector || s.url || ""}</span>
-                                                </div>
+                                        <div style={{ padding: "12px 18px", display: "flex", flexDirection: "column", gap: "8px", maxHeight: "160px", overflowY: "auto", background: "rgba(255,255,255,0.01)" }}>
+                                            {flow.steps.slice(0, 3).map((s, i) => (
+                                                <StepCard key={i} step={s} index={i} compact />
                                             ))}
-                                            {flow.steps.length > 4 && <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", paddingLeft: "23px" }}>+{flow.steps.length - 4} more</div>}
+                                            {flow.steps.length > 3 && <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", textAlign: "center", padding: "4px", fontWeight: "600" }}>+{flow.steps.length - 3} more steps…</div>}
                                         </div>
                                         <div style={{ padding: "10px 18px", borderTop: "1px solid var(--border)", display: "flex", gap: "6px" }}>
                                             <button className="btn-secondary" style={{ height: "30px", padding: "0 10px", fontSize: "0.76rem" }} onClick={() => setDetailFlow(flow)}><Eye size={12} /> View</button>
@@ -502,53 +630,33 @@ export default function TestFlowsPage() {
 
             {/* ══════════════════════════════════════════════════════ MODALS ══════ */}
 
-            {/* AI Convert Modal */}
-            {showConvert && (
-                <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.72)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }} onClick={() => setShowConvert(false)}>
-                    <div className="glass-card animate-fade-in" style={{ width: "100%", maxWidth: "540px", padding: "26px" }} onClick={e => e.stopPropagation()}>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "18px" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: "9px" }}><Wand2 size={16} color="#8b5cf6" /><h2 style={{ fontSize: "1rem", fontWeight: "700", color: "var(--text-primary)", margin: 0 }}>AI Convert Test Case to Flow</h2></div>
-                            <button onClick={() => setShowConvert(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}><X size={16} /></button>
-                        </div>
-                        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                            {[{ label: "Flow Name (optional)", val: convName, set: setConvName, ph: "e.g. Login Flow", type: "text" }, { label: "Target URL *", val: convUrl, set: setConvUrl, ph: "https://example.com", type: "url" }, { label: "Requirement (optional)", val: convReq, set: setConvReq, ph: "e.g. Verify login works", type: "text" }].map(({ label, val, set, ph, type }) => (
-                                <div key={label}><label style={{ display: "block", fontSize: "0.7rem", fontWeight: "700", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: "5px" }}>{label}</label><input type={type} className="input-field" placeholder={ph} value={val} onChange={e => set(e.target.value)} /></div>
-                            ))}
-                            <div><label style={{ display: "block", fontSize: "0.7rem", fontWeight: "700", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: "5px" }}>Test Steps *</label>
-                                <textarea className="input-field" rows={5} style={{ resize: "vertical" }} placeholder={"1. Open login page\n2. Enter email\n3. Enter password\n4. Click login\n5. Verify dashboard"} value={convText} onChange={e => setConvText(e.target.value)} /></div>
-                            {convError && <div style={{ display: "flex", alignItems: "center", gap: "7px", padding: "9px 12px", borderRadius: "7px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", fontSize: "0.8rem", color: "#ef4444" }}><AlertCircle size={13} />{convError}</div>}
-                            <div style={{ display: "flex", gap: "8px" }}>
-                                <button className="btn-secondary" style={{ flex: 1 }} onClick={() => setShowConvert(false)}>Cancel</button>
-                                <button className="btn-primary" style={{ flex: 1, background: "linear-gradient(135deg,#8b5cf6,#06b6d4)" }} onClick={handleConvert} disabled={convLoading}>{convLoading ? <LoadingSpinner size={13} /> : <Wand2 size={13} />}{convLoading ? "Converting…" : "Convert & Save"}</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
+
 
             {/* Flow Detail Modal */}
             {detailFlow && (
-                <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.72)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }} onClick={() => setDetailFlow(null)}>
-                    <div className="glass-card animate-fade-in" style={{ width: "100%", maxWidth: "500px", padding: "0", overflow: "hidden" }} onClick={e => e.stopPropagation()}>
-                        <div style={{ padding: "18px 22px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                            <div><h2 style={{ fontSize: "0.98rem", fontWeight: "700", color: "var(--text-primary)", margin: 0 }}>{detailFlow.name}</h2><p style={{ fontSize: "0.73rem", color: "var(--text-muted)", margin: "3px 0 0" }}>{detailFlow.targetUrl}</p></div>
-                            <button onClick={() => setDetailFlow(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}><X size={16} /></button>
-                        </div>
-                        <div style={{ padding: "14px 22px", display: "flex", flexDirection: "column", gap: "5px", maxHeight: "55vh", overflowY: "auto" }}>
-                            {detailFlow.steps.map((s, i) => (
-                                <div key={i} style={{ padding: "7px 11px", borderRadius: "6px", background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)", display: "flex", alignItems: "flex-start", gap: "8px" }}>
-                                    <span style={{ fontSize: "0.68rem", color: "var(--text-muted)", minWidth: "18px", marginTop: "2px" }}>{s.step}.</span>
-                                    <ActionBadge action={s.action} />
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ fontSize: "0.8rem", fontWeight: "500", color: "var(--text-primary)" }}>{s.label || `${s.action} ${s.selector || s.url || ""}`}</div>
-                                        {(s.selector || s.url || s.value) && <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", fontFamily: "monospace", marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.url || s.selector || s.value}</div>}
-                                    </div>
+                <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.8)", backdropFilter: "blur(12px)", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }} onClick={() => setDetailFlow(null)}>
+                    <div className="glass-card animate-fade-in" style={{ width: "100%", maxWidth: "600px", padding: "0", overflow: "hidden", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)" }} onClick={e => e.stopPropagation()}>
+                        <div style={{ padding: "24px", background: "rgba(255,255,255,0.02)", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                            <div>
+                                <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
+                                    <h2 style={{ fontSize: "1.2rem", fontWeight: "700", color: "var(--text-primary)", margin: 0 }}>{detailFlow.name}</h2>
+                                    <span style={{ fontSize: "0.65rem", fontWeight: "700", textTransform: "uppercase", background: "rgba(16,182,212,0.1)", color: "#06b6d4", padding: "2px 8px", borderRadius: "4px" }}>{detailFlow.steps.length} Steps</span>
                                 </div>
+                                <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", margin: 0, display: "flex", alignItems: "center", gap: "6px" }}><Globe size={13} /> {detailFlow.targetUrl}</p>
+                            </div>
+                            <button onClick={() => setDetailFlow(null)} style={{ background: "rgba(255,255,255,0.05)", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: "8px", borderRadius: "8px" }}><X size={18} /></button>
+                        </div>
+                        <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "10px", maxHeight: "60vh", overflowY: "auto", background: "var(--bg-primary)" }}>
+                            <div style={{ fontSize: "0.7rem", fontWeight: "700", textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.1em", marginBottom: "4px" }}>Test Execution Steps</div>
+                            {detailFlow.steps.map((s, i) => (
+                                <StepCard key={i} step={s} index={i} />
                             ))}
                         </div>
-                        <div style={{ padding: "12px 22px", borderTop: "1px solid var(--border)", display: "flex", gap: "8px" }}>
-                            <button className="btn-secondary" style={{ flex: 1 }} onClick={() => setDetailFlow(null)}>Close</button>
-                            <button className="btn-primary" style={{ flex: 1, background: "#059669" }} onClick={() => { handleRun(detailFlow); setDetailFlow(null); }} disabled={runningId !== null}><Play size={13} fill="white" /> Run Flow</button>
+                        <div style={{ padding: "16px 24px", background: "rgba(255,255,255,0.02)", borderTop: "1px solid var(--border)", display: "flex", gap: "12px" }}>
+                            <button className="btn-secondary" style={{ flex: 1, height: "44px", fontWeight: "600" }} onClick={() => setDetailFlow(null)}>Close View</button>
+                            <button className="btn-primary" style={{ flex: 1, height: "44px", background: "#10b981", fontWeight: "600" }} onClick={() => { handleRun(detailFlow); setDetailFlow(null); }} disabled={runningId !== null}>
+                                <Play size={16} fill="white" /> Run Test Now
+                            </button>
                         </div>
                     </div>
                 </div>

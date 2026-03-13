@@ -18,7 +18,7 @@ import {
   ShieldCheck,
   BookOpen,
   History,
-  FlaskConical,
+  PlayCircle,
 } from "lucide-react";
 
 const navItems = [
@@ -56,7 +56,7 @@ const navItems = [
   {
     href: "/test-flows",
     label: "Automated Tests",
-    icon: FlaskConical,
+    icon: PlayCircle,
     color: "#10b981",
   },
   {

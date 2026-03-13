@@ -9,7 +9,7 @@ import {
   Layers,
   TriangleAlert,
   Target,
-  FlaskConical,
+  PlayCircle,
   Repeat,
   ExternalLink,
 } from "lucide-react";
@@ -186,7 +186,7 @@ ${analysis.suggestedFlowScripts?.length ? `\nSuggested Existing Flow Scripts:\n$
 
         {/* Recommended Test Types */}
         <ResultPanel
-          icon={FlaskConical}
+          icon={PlayCircle}
           iconColor="#06b6d4"
           label="Recommended Test Types"
           accentBg="rgba(6,182,212,0.06)"
@@ -305,9 +305,9 @@ ${analysis.suggestedFlowScripts?.length ? `\nSuggested Existing Flow Scripts:\n$
         {/* Suggested Flow Scripts */}
         {analysis.suggestedFlowScripts && analysis.suggestedFlowScripts.length > 0 && (
           <ResultPanel
-            icon={Repeat}
+            icon={PlayCircle}
             iconColor="#06b6d4"
-            label="Suggested Flow Scripts"
+            label="Suggested Automated Tests"
             accentBg="rgba(6,182,212,0.06)"
             accentBorder="rgba(6,182,212,0.2)"
           >
