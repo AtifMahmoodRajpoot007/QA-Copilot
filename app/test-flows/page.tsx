@@ -5,6 +5,7 @@ import {
     AlertCircle, CheckCircle2, XCircle, Clock, Library, Wand2, RotateCcw,
     Zap, Terminal, Wifi, Eye, X, ChevronDown, ChevronUp, AlertTriangle,
     Bot, Activity, History, BookOpen, PlayCircle, ListChecks, ShieldCheck,
+    Check, Monitor
 } from "lucide-react";
 import LoadingSpinner from "@/components/ui/LoadingSpinner";
 
@@ -142,7 +143,7 @@ export default function TestFlowsPage() {
     const [flowName, setFlowName] = useState("");
     const [liveRunActive, setLiveRunActive] = useState(false);
     const [liveSessionId, setLiveSessionId] = useState<string | null>(null);
-    const [liveSteps, setLiveSteps] = useState<any[]>([]);
+    const [liveSteps, setLiveSteps] = useState<FlowStep[]>([]);
     const [liveResults, setLiveResults] = useState<any[]>([]);
     const [liveRunStatus, setLiveRunStatus] = useState<string>("RUNNING");
     const [liveScreenshot, setLiveScreenshot] = useState<string | null>(null);
@@ -205,6 +206,7 @@ export default function TestFlowsPage() {
             setLiveResults([]);
             setLiveRunStatus("RUNNING");
             setLiveScreenshot(null);
+            setLiveRunActive(true);
             
             pollingRef.current = setInterval(async () => {
                 const pr = await fetch(`/api/flows/session/${d.sessionId}`);
@@ -380,7 +382,99 @@ export default function TestFlowsPage() {
         );
     }
 
-    // Live Run removed per request
+    // ── Live Run Dashboard Overlay ──
+    if (liveRunActive) {
+        return (
+            <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "var(--bg-primary)", display: "flex", flexDirection: "column", padding: "20px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", padding: "0 10px" }}>
+                    <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                            <div className="pulse-dot" style={{ width: "10px", height: "10px", borderRadius: "50%", background: liveRunStatus === "RUNNING" ? "#10b981" : liveRunStatus === "PASS" ? "#10b981" : "#ef4444" }}></div>
+                            <h2 style={{ fontSize: "1.2rem", fontWeight: "700", margin: 0 }}>Executing: {runBanner?.flowName || "Test Flow"}</h2>
+                        </div>
+                        <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: "4px 0 0" }}>Session ID: {liveSessionId} · {liveResults.length} of {liveSteps.length} steps complete</p>
+                    </div>
+                    {liveRunStatus !== "RUNNING" ? (
+                        <button className="btn-primary" onClick={() => { setLiveRunActive(false); setRunBanner(null); setTab("results"); fetchRuns(); }}>Close & View All Results</button>
+                    ) : (
+                        <button className="btn-secondary" style={{ color: "#ef4444" }} onClick={handleStopLiveRun}><X size={15} /> Stop Execution</button>
+                    )}
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "20px", flex: 1, overflow: "hidden" }}>
+                    {/* Left: Stream */}
+                    <div className="glass-card" style={{ display: "flex", flexDirection: "column", overflow: "hidden", padding: 0 }}>
+                        <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(255,255,255,0.02)" }}>
+                            <div style={{ fontSize: "0.75rem", fontWeight: "700", textTransform: "uppercase", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "6px" }}><Monitor size={14} /> Live Browser Stream</div>
+                            <div style={{ fontSize: "0.7rem", color: "#10b981", fontWeight: "600" }}>{liveRunStatus === "RUNNING" ? "CONNECTED" : "DISCONNECTED"}</div>
+                        </div>
+                        <div style={{ flex: 1, background: "#000", position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            {liveScreenshot ? (
+                                <img src={`data:image/png;base64,${liveScreenshot}`} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                            ) : (
+                                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "12px", color: "var(--text-muted)" }}>
+                                    <LoadingSpinner size={32} />
+                                    <span style={{ fontSize: "0.85rem" }}>Waiting for browser stream...</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Right: Steps */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: "12px", overflow: "hidden" }}>
+                        <div className="glass-card" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", padding: 0 }}>
+                            <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", background: "rgba(255,255,255,0.02)", fontSize: "0.75rem", fontWeight: "700", textTransform: "uppercase", color: "var(--text-muted)" }}>Execution Progress</div>
+                            <div style={{ flex: 1, overflowY: "auto", padding: "12px" }}>
+                                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                                    {liveSteps.map((step, idx) => {
+                                        const result = liveResults.find(r => r.step === step.step);
+                                        const isCurrent = liveRunStatus === "RUNNING" && liveResults.length === idx;
+                                        return (
+                                            <div key={idx} style={{ 
+                                                display: "flex", 
+                                                alignItems: "center", 
+                                                gap: "12px", 
+                                                padding: "10px 14px", 
+                                                borderRadius: "10px", 
+                                                background: isCurrent ? "rgba(139,92,246,0.08)" : result ? (result.status === "PASS" ? "rgba(16,185,129,0.05)" : "rgba(239,68,68,0.05)") : "rgba(255,255,255,0.02)",
+                                                border: isCurrent ? "1px solid rgba(139,92,246,0.2)" : "1px solid var(--border)",
+                                                transition: "all 0.3s ease"
+                                            }}>
+                                                <div style={{ width: "24px", height: "24px", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.7rem", fontWeight: "700", background: result ? (result.status === "PASS" ? "#10b981" : "#ef4444") : isCurrent ? "#8b5cf6" : "rgba(255,255,255,0.1)", color: "white" }}>
+                                                    {result ? (result.status === "PASS" ? <Check size={14} /> : <X size={14} />) : step.step}
+                                                </div>
+                                                <div style={{ flex: 1 }}>
+                                                    <div style={{ fontSize: "0.85rem", fontWeight: "600", color: isCurrent ? "var(--text-primary)" : "var(--text-secondary)" }}>{step.label || step.action}</div>
+                                                    {result?.error && <div style={{ fontSize: "0.7rem", color: "#f87171", marginTop: "2px" }}>{result.error}</div>}
+                                                </div>
+                                                {result?.durationMs && <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>{(result.durationMs / 1000).toFixed(1)}s</div>}
+                                                {isCurrent && <LoadingSpinner size={12} />}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Summary Card */}
+                        {liveRunStatus !== "RUNNING" && (
+                            <div className="animate-slide-up glass-card" style={{ padding: "16px", background: liveRunStatus === "PASS" ? "rgba(16,185,129,0.1)" : "rgba(239,68,68,0.1)", border: `1px solid ${liveRunStatus === "PASS" ? "#10b98144" : "#ef444444"}` }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                                    <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: liveRunStatus === "PASS" ? "#10b981" : "#ef4444", display: "flex", alignItems: "center", justifyContent: "center", color: "white" }}>
+                                        {liveRunStatus === "PASS" ? <Check size={24} /> : <AlertTriangle size={24} />}
+                                    </div>
+                                    <div>
+                                        <div style={{ fontWeight: "800", fontSize: "1.1rem" }}>Execution {liveRunStatus === "PASS" ? "Successful" : "Failed"}</div>
+                                        <div style={{ fontSize: "0.85rem", opacity: 0.8 }}>Test completed with {liveResults.filter(r => r.status === "PASS").length} passed steps.</div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
 
     return (

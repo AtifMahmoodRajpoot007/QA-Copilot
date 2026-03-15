@@ -14,7 +14,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     return NextResponse.json({
         steps: session.steps,
-        screenshot: session.latestScreenshot,
+        stepResults: (session as any).stepResults,
+        runStatus: (session as any).runStatus,
+        latestScreenshot: session.latestScreenshot,
+        consoleLogs: (session as any).consoleLogs,
+        networkFailures: (session as any).networkFailures,
         createdAt: session.createdAt
     });
 }

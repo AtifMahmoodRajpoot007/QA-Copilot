@@ -15,13 +15,27 @@ export interface RecordingSession {
     createdAt: number;
 }
 
-// Global store (persists in Node.js process memory)
-const g = global as any;
-if (!g.__recordingSessions) {
-    g.__recordingSessions = new Map<string, RecordingSession>();
+export interface LiveRunSession {
+    browser: Browser;
+    context: BrowserContext;
+    page: Page;
+    flowName: string;
+    steps: FlowStep[];
+    stepResults: any[];
+    runStatus: "RUNNING" | "PASS" | "FAIL" | "PARTIAL";
+    latestScreenshot: string;
+    consoleLogs: string[];
+    networkFailures: string[];
+    createdAt: number;
 }
 
-export const sessionStore: Map<string, RecordingSession> = g.__recordingSessions;
+// Global store
+const g = global as any;
+if (!g.__qaSessions) {
+    g.__qaSessions = new Map<string, any>();
+}
+
+export const sessionStore: Map<string, any> = g.__qaSessions;
 
 export function generateSessionId(): string {
     return Math.random().toString(36).substring(2) + Date.now().toString(36);
