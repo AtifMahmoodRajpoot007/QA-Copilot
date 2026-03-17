@@ -5,6 +5,7 @@
  */
 
 import { chromium } from "playwright";
+import { launchBrowser } from "@/lib/playwright";
 import { attachErrorMonitor } from "./errorMonitor";
 
 export interface FlowStep {
@@ -89,10 +90,7 @@ export async function runFlow(
     steps: FlowStep[],
     targetUrl: string
 ): Promise<RunResult> {
-    const browser = await chromium.launch({ 
-        headless: true,
-        args: ["--ignore-certificate-errors", "--ignore-ssl-errors"]
-    });
+    const browser = await launchBrowser({ headless: true });
     const context = await browser.newContext({
         ignoreHTTPSErrors: true,
         userAgent:
