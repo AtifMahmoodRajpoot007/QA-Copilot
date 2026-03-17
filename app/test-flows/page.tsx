@@ -758,8 +758,8 @@ export default function TestFlowsPage() {
                         <div style={{ padding: "24px", background: "rgba(255,255,255,0.02)", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                             <div>
                                 <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
-                                    <h2 style={{ fontSize: "1.2rem", fontWeight: "700", color: "var(--text-primary)", margin: 0 }}>{detailFlow.name}</h2>
-                                    <span style={{ fontSize: "0.65rem", fontWeight: "700", textTransform: "uppercase", background: "rgba(16,182,212,0.1)", color: "#06b6d4", padding: "2px 8px", borderRadius: "4px" }}>{detailFlow.steps.length} Steps</span>
+                                    <h2 style={{ fontSize: "1.2rem", fontWeight: "700", color: "var(--text-primary)", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{detailFlow.name}</h2>
+                                    <span style={{ fontSize: "0.65rem", fontWeight: "700", textTransform: "uppercase", background: "rgba(16,182,212,0.1)", color: "#06b6d4", padding: "2px 8px", borderRadius: "4px", flexShrink: 0, whiteSpace: "nowrap" }}>{detailFlow.steps.length} Steps</span>
                                 </div>
                                 <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", margin: 0, display: "flex", alignItems: "center", gap: "6px" }}><Globe size={13} /> {detailFlow.targetUrl}</p>
                             </div>
@@ -787,7 +787,7 @@ export default function TestFlowsPage() {
                     <div className="glass-card animate-fade-in" style={{ width: "100%", maxWidth: "680px", maxHeight: "85vh", overflow: "hidden", display: "flex", flexDirection: "column" }} onClick={e => e.stopPropagation()}>
                         <div style={{ padding: "18px 22px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                                <h2 style={{ fontSize: "0.98rem", fontWeight: "700", color: "var(--text-primary)", margin: 0 }}>{detailRun.flowName}</h2>
+                                <h2 style={{ fontSize: "0.98rem", fontWeight: "700", color: "var(--text-primary)", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{detailRun.flowName}</h2>
                                 <StatusBadge status={detailRun.overallStatus} />
                                 <span style={{ fontSize: "0.73rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "3px" }}><Clock size={11} />{(detailRun.totalDurationMs / 1000).toFixed(2)}s</span>
                             </div>

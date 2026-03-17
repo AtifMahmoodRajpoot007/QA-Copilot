@@ -113,6 +113,13 @@ export interface FlowStep {
   label?: string;
   url?: string;
   selector?: string;
+  selectors?: {
+    css?: string;
+    text?: string;
+    role?: string;
+    placeholder?: string;
+    xpath?: string;
+  };
   value?: string;
 }
 

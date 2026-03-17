@@ -7,6 +7,13 @@ const FlowStepSchema = new Schema(
         label: { type: String },
         url: { type: String },
         selector: { type: String },
+        selectors: {
+            css: { type: String },
+            text: { type: String },
+            role: { type: String },
+            placeholder: { type: String },
+            xpath: { type: String },
+        },
         value: { type: String },
         expected: { type: String },
     },

@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
             action: step.action,
             label: step.text || `${step.action} ${step.selector || step.url || ""}`.trim(),
             selector: step.selector || "",
+            selectors: step.selectors || {},
             value: step.value || step.text || "",
             url: step.url || "",
             step: step.stepNumber || 1,

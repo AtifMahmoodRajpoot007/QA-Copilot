@@ -10,42 +10,87 @@ export const maxDuration = 60;
  * Injected into the page via CDP.
  */
 const SELECTOR_GENERATOR = `
-function getSelector(el) {
-    if (!el) return null;
-    if (el.getAttribute('data-testid')) return '[data-testid="' + el.getAttribute('data-testid') + '"]';
-    if (el.getAttribute('data-test-id')) return '[data-test-id="' + el.getAttribute('data-test-id') + '"]';
-    if (el.getAttribute('name')) return el.tagName.toLowerCase() + '[name="' + el.getAttribute('name') + '"]';
-    if (el.getAttribute('aria-label')) return el.tagName.toLowerCase() + '[aria-label="' + el.getAttribute('aria-label') + '"]';
-    if (el.id) {
-        // Skip dynamic-looking or very long auto-generated IDs
-        if (!el.id.includes('radix-') && !el.id.match(/[0-9]{3,}/)) {
+function getSelectors(el) {
+    if (!el) return { css: null };
+    
+    let selectors = {};
+    
+    // 1. Primary CSS
+    function getCss(el) {
+        if (el.getAttribute('data-testid')) return '[data-testid="' + el.getAttribute('data-testid') + '"]';
+        if (el.getAttribute('data-test-id')) return '[data-test-id="' + el.getAttribute('data-test-id') + '"]';
+        if (el.id && !el.id.includes('radix-') && !el.id.match(/[0-9]{3,}/)) {
             try { return '#' + CSS.escape(el.id); } catch(e) { return '#' + el.id; }
         }
+        if (el.getAttribute('name')) return el.tagName.toLowerCase() + '[name="' + el.getAttribute('name') + '"]';
+        return null; // fallback will be computed
     }
-    if (el.getAttribute('type') && (el.tagName === 'INPUT' || el.tagName === 'BUTTON'))
-        return el.tagName.toLowerCase() + '[type="' + el.getAttribute('type') + '"]';
-    if (el.getAttribute('placeholder'))
-        return '[placeholder="' + el.getAttribute('placeholder') + '"]';
-        
-    // Text fallback for buttons/links
-    if ((el.tagName === 'BUTTON' || el.tagName === 'A') && el.textContent && el.textContent.trim().length < 30) {
-        return el.tagName.toLowerCase() + ':has-text("' + el.textContent.trim().replace(/"/g, '\\\\"') + '")';
+    
+    let primaryCss = getCss(el);
+    if (!primaryCss) {
+        if (el.className && typeof el.className === 'string' && el.className.trim()) {
+            const cls = el.className.trim().split(/\\s+/).slice(0, 2).join('.');
+            const tag = el.tagName.toLowerCase();
+            const candidates = document.querySelectorAll(tag + '.' + cls.replace(/\\s+/g, '.'));
+            if (candidates.length === 1) primaryCss = tag + '.' + cls.replace(/\\s+/g, '.');
+        }
     }
-    if (el.className && typeof el.className === 'string' && el.className.trim()) {
-        const cls = el.className.trim().split(/\\s+/).slice(0, 2).join('.');
-        const tag = el.tagName.toLowerCase();
-        const candidates = document.querySelectorAll(tag + '.' + cls.replace(/\\s+/g, '.'));
-        if (candidates.length === 1) return tag + '.' + cls.replace(/\\s+/g, '.');
-    }
-    // nth-child fallback
-    const parent = el.parentElement;
-    if (parent) {
+    if (!primaryCss && el.parentElement) {
+        const parent = el.parentElement;
         const children = Array.from(parent.children);
         const idx = children.indexOf(el) + 1;
         const tag = el.tagName.toLowerCase();
-        return getSelector(parent) + ' > ' + tag + ':nth-child(' + idx + ')';
+        
+        let pCss = getCss(parent);
+        if (pCss) {
+            primaryCss = pCss + ' > ' + tag + ':nth-child(' + idx + ')';
+        } else {
+            primaryCss = tag + ':nth-child(' + idx + ')';
+        }
     }
-    return el.tagName.toLowerCase();
+    selectors.css = primaryCss || el.tagName.toLowerCase();
+    
+    // 2. Text
+    let text = el.textContent || el.innerText;
+    if (text && text.trim().length > 0 && text.trim().length < 50) {
+        selectors.text = text.trim();
+    } else if (el.value && typeof el.value === 'string') {
+        selectors.text = el.value.trim();
+    }
+    
+    // 3. Placeholder
+    if (el.getAttribute('placeholder')) {
+        selectors.placeholder = el.getAttribute('placeholder');
+    }
+    
+    // 4. Role
+    const role = el.getAttribute('role');
+    if (role) {
+        selectors.role = role;
+    } else if (el.tagName === 'BUTTON' || (el.tagName === 'INPUT' && (el.type === 'button' || el.type === 'submit'))) {
+        selectors.role = 'button';
+    } else if (el.tagName === 'A') {
+        selectors.role = 'link';
+    }
+    
+    // 5. XPath
+    try {
+        function getXPath(element) {
+            if (element.id !== '') return 'id("' + element.id + '")';
+            if (element === document.body) return element.tagName;
+
+            var ix = 0;
+            var siblings = element.parentNode ? element.parentNode.childNodes : [];
+            for (var i = 0; i < siblings.length; i++) {
+                var sibling = siblings[i];
+                if (sibling === element) return getXPath(element.parentNode) + '/' + element.tagName + '[' + (ix + 1) + ']';
+                if (sibling.nodeType === 1 && sibling.tagName === element.tagName) ix++;
+            }
+        }
+        selectors.xpath = getXPath(el);
+    } catch(e) {}
+    
+    return selectors;
 }
 `;
 
@@ -63,11 +108,12 @@ const INJECT_SCRIPT = `
         // Ignore clicks on our injected stop button
         if (el.id === '__qa_stop_btn' || el.closest('#__qa_stop_btn') || el.closest('#__qa_stop_container')) return;
         
-        var sel = getSelector(el);
+        var selectors = getSelectors(el);
         var label = (el.textContent || el.value || el.placeholder || el.getAttribute('aria-label') || el.tagName).trim().substring(0, 60);
         window.__qaRecordedEvents.push({
             type: 'click',
-            selector: sel,
+            selector: selectors.css,
+            selectors: selectors,
             label: 'Click: ' + label,
             ts: Date.now()
         });
@@ -78,13 +124,13 @@ const INJECT_SCRIPT = `
     document.addEventListener('input', function(e) {
         var el = e.target;
         if (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') return;
-        var sel = getSelector(el);
+        var selectors = getSelectors(el);
         var label = (el.placeholder || el.name || el.id || 'Input').substring(0, 40);
         // debounce: update or push
         var events = window.__qaRecordedEvents;
         if (events.length > 0) {
             var last = events[events.length - 1];
-            if (last.type === 'fill' && last.selector === sel) {
+            if (last.type === 'fill' && last.selector === selectors.css) {
                 last.value = el.value;
                 last.ts = Date.now();
                 return;
@@ -92,7 +138,8 @@ const INJECT_SCRIPT = `
         }
         window.__qaRecordedEvents.push({
             type: 'fill',
-            selector: sel,
+            selector: selectors.css,
+            selectors: selectors,
             value: el.value,
             label: 'Fill ' + label + ': ' + el.value.substring(0, 30),
             ts: Date.now()
@@ -103,10 +150,11 @@ const INJECT_SCRIPT = `
     document.addEventListener('change', function(e) {
         var el = e.target;
         if (el.tagName !== 'SELECT') return;
-        var sel = getSelector(el);
+        var selectors = getSelectors(el);
         window.__qaRecordedEvents.push({
             type: 'select',
-            selector: sel,
+            selector: selectors.css,
+            selectors: selectors,
             value: el.value,
             label: 'Select: ' + el.value,
             ts: Date.now()
@@ -303,6 +351,7 @@ export async function POST(req: NextRequest) {
                         action: ev.type as FlowStep["action"],
                         label: ev.label,
                         selector: ev.selector,
+                        selectors: ev.selectors || {},
                         value: ev.value,
                         url: ev.url,
                     };
