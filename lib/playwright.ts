@@ -16,10 +16,19 @@ if (process.env.NODE_ENV === "production" && !process.env.BROWSER_WSE_ENDPOINT) 
  */
 export async function launchBrowser(options: { headless?: boolean } = {}): Promise<Browser> {
     const wse = process.env.BROWSER_WSE_ENDPOINT;
+    const isVercel = process.env.VERCEL === "1" || process.env.VERCEL === "true";
 
     if (wse) {
         console.log('Connecting to remote browser at:', wse);
         return await chromium.connectOverCDP(wse);
+    }
+
+    if (isVercel) {
+        throw new Error(
+            "CRITICAL: Playwright cannot run locally on Vercel serverless functions. " +
+            "You MUST provide a 'BROWSER_WSE_ENDPOINT' (e.g. from Browserless.io) in your Vercel Environment Variables. " +
+            "Please check the Technical Audit Report or task.md for setup instructions."
+        );
     }
 
     console.log('Launching local chromium instance...');
