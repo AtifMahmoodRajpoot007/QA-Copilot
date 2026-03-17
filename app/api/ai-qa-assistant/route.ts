@@ -1,201 +1,247 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chromium, Page } from "playwright";
-import { callLLM } from "@/lib/gemini";
+import { chromium } from "playwright";
+import { callLLM, callLLMWithImage } from "@/lib/gemini";
 import { AI_TESTING_AGENT_PROMPT } from "@/lib/prompts";
 import connectToDatabase from "@/lib/mongodb";
+import { sessionStore } from "@/lib/sessionStore";
+import { injectPIPOverlay, injectClickHighlighter, highlightElement, updatePIPOverlay } from "@/lib/browserOverlay";
 import QAAssistantSession from "@/models/QAAssistantSession";
 
-export const maxDuration = 120; // 2 minutes max duration for agentic loop
+export const maxDuration = 300; // 5 minutes for agentic loop
 
 const GET_INTERACTIVE_DOM = `
 (() => {
-    // Basic DOM Simplifier targeting interactive elements
-    const elements = document.querySelectorAll('button, a, input, select, textarea, [role="button"], [role="link"]');
+    const elements = document.querySelectorAll('button, a, input, select, textarea, [role="button"], [role="link"], [onclick], .btn, .button');
     let dom = '';
     let counter = 1;
     
     elements.forEach(el => {
-        // Skip hidden elements
         const style = window.getComputedStyle(el);
         if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return;
         
         const rect = el.getBoundingClientRect();
-        if (rect.width === 0 || rect.height === 0) return;
+        if (rect.width <= 1 || rect.height <= 1) return;
         
+        const inViewport = (
+            rect.top >= -1000 &&
+            rect.left >= -1000 &&
+            rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) + 1000 &&
+            rect.right <= (window.innerWidth || document.documentElement.clientWidth) + 1000
+        );
+        if (!inViewport) return;
+
         el.setAttribute('data-playwright-id', counter.toString());
-        const pid = \` data-playwright-id="\${counter}"\`;
+        const pid = ' data-playwright-id="' + counter + '"';
         counter++;
 
-        // Build simple description
         const tag = el.tagName.toLowerCase();
-        const id = el.id ? \` id="\${el.id}"\` : '';
-        const role = el.getAttribute('role') ? \` role="\${el.getAttribute('role')}"\` : '';
-        const testId = el.getAttribute('data-testid') ? \` data-testid="\${el.getAttribute('data-testid')}"\` : '';
-        const type = el.getAttribute('type') ? \` type="\${el.getAttribute('type')}"\` : '';
-        const name = el.getAttribute('name') ? \` name="\${el.getAttribute('name')}"\` : '';
+        const id = el.id ? ' id="' + el.id + '"' : '';
+        const role = el.getAttribute('role') ? ' role="' + el.getAttribute('role') + '"' : '';
+        const type = el.getAttribute('type') ? ' type="' + el.getAttribute('type') + '"' : '';
+        const name = el.getAttribute('name') ? ' name="' + el.getAttribute('name') + '"' : '';
+        const ariaLabel = el.getAttribute('aria-label') ? ' aria-label="' + el.getAttribute('aria-label') + '"' : '';
+        const title = el.getAttribute('title') ? ' title="' + el.getAttribute('title') + '"' : '';
+        const placeholder = el.getAttribute('placeholder') ? ' placeholder="' + el.getAttribute('placeholder') + '"' : '';
         
-        let text = (el.textContent || el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('value') || '').trim().replace(/\\s+/g, ' ').substring(0, 50);
-        if (text) text = \`>\${text}</\${tag}>\`;
+        let text = (el.textContent || '').trim().replace(/\\s+/g, ' ').substring(0, 60);
+        if (text) text = '>' + text + '</' + tag + '>';
         else text = ' />';
         
-        dom += \`<\${tag}\${pid}\${id}\${role}\${testId}\${type}\${name}\${text}\\n\`;
+        dom += '<' + tag + pid + id + role + type + name + ariaLabel + title + placeholder + text + '\\n';
     });
     
-    return dom.substring(0, 3500); // hard cap the string size
+    return dom.substring(0, 15000);
 })()
 `;
 
 export async function POST(req: NextRequest) {
     try {
-        const { url, instruction, userId = "demo-user" } = await req.json();
-
+        const { url, instruction } = await req.json();
         if (!url || !instruction) {
             return NextResponse.json({ error: "URL and instruction are required" }, { status: 400 });
         }
 
-        await connectToDatabase();
+        const sessionId = Math.random().toString(36).substring(7);
+        const browser = await chromium.launch({ 
+            headless: false, 
+            args: ["--start-maximized", "--no-sandbox"] 
+        });
+        
+        const context = await browser.newContext({ viewport: null });
+        
+        // Block heavy/analytics resources to speed up page loads for AI Agent
+        await context.route("**/*", (route) => {
+            const req = route.request();
+            const type = req.resourceType();
+            const url = req.url();
+            const blockedTypes = ['image', 'media', 'font', 'other'];
+            const blockList = ['google-analytics', 'doubleclick', 'facebook', 'hotjar', 'mixpanel'];
+            
+            if (blockedTypes.includes(type) || blockList.some(domain => url.includes(domain))) {
+                route.abort();
+            } else {
+                route.continue();
+            }
+        });
 
-        const browser = await chromium.launch({
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--ignore-certificate-errors', '--ignore-ssl-errors']
-        });
-        
-        const context = await browser.newContext({
-            ignoreHTTPSErrors: true,
-            viewport: { width: 1280, height: 800 }
-        });
-        
         const page = await context.newPage();
-        
-        const steps: any[] = [];
-        let status: "pass" | "fail" = "pass";
-        let errorMessage = "";
-        const startTime = Date.now();
 
-        try {
-            await page.goto(url, { waitUntil: "networkidle", timeout: 25000 });
-            await page.waitForTimeout(1500); // let things settle
-            
-            let actionHistory = "";
-            let currentUrl = url;
+        sessionStore.set(sessionId, {
+            id: sessionId,
+            browser,
+            page,
+            steps: [],
+            stepResults: [],
+            runStatus: "RUNNING",
+            latestScreenshot: null,
+            consoleLogs: [],
+            networkFailures: [],
+            createdAt: Date.now()
+        } as any);
 
-            // Agent Loop - max 10 steps
-            for (let i = 0; i < 10; i++) {
-                // Get DOM state
-                const domSnapshot = await page.evaluate(GET_INTERACTIVE_DOM).catch(() => "Unable to read DOM") as string;
-                currentUrl = page.url();
-
-                // Build prompt
-                const prompt = AI_TESTING_AGENT_PROMPT(String(instruction), String(currentUrl), String(domSnapshot), actionHistory);
+        const runAgent = async () => {
+            try {
+                // Use commit instead of networkidle to prevent strict network timeouts on modern SPA apps
+                await page.goto(url, { waitUntil: "commit", timeout: 20000 }).catch(() => {});
+                await injectPIPOverlay(page, "run", "AI Agent Active");
+                await injectClickHighlighter(page);
                 
-                // Call Gemini
-                let actionObj;
-                try {
-                    const responseText = await callLLM(prompt);
-                    actionObj = JSON.parse(responseText);
-                } catch (e) {
-                    throw new Error("Failed to parse Agent decision from AI server.");
-                }
+                let actionHistory = "";
+                const session = sessionStore.get(sessionId) as any;
 
-                if (actionObj.action === "finish") {
-                    status = "pass";
-                    steps.push({
-                        action: "finish",
-                        reasoning: actionObj.reasoning || "Task completed successfully.",
-                        screenshot: await page.screenshot({ fullPage: false }).then(b => `data:image/png;base64,${b.toString('base64')}`).catch(() => "")
+                for (let i = 0; i < 30; i++) {
+                    const domSnapshot = await page.evaluate(GET_INTERACTIVE_DOM).catch(() => "Unable to read DOM");
+                    const currentUrl = page.url();
+
+                    const screenshotBuffer = await page.screenshot({ type: "jpeg", quality: 50 }).catch(() => null);
+                    const base64Screenshot = screenshotBuffer ? screenshotBuffer.toString("base64") : "";
+                    session.latestScreenshot = base64Screenshot;
+                    
+                    // Renamed from Thinking to Agent Step to see if build updates
+                    await updatePIPOverlay(page, "Agent Step " + (i + 1));
+                    const prompt = AI_TESTING_AGENT_PROMPT(instruction, currentUrl, domSnapshot as string, actionHistory);
+                    
+                    const responseText = await callLLMWithImage(prompt, base64Screenshot, "image/jpeg");
+                    let actionObj;
+                    try {
+                        actionObj = JSON.parse(responseText);
+                    } catch (e) {
+                         // Fallback if LLM returns bad JSON
+                         actionObj = { action: "fail", reasoning: "LLM returned invalid JSON" };
+                    }
+
+                    if (actionObj.action === "finish") {
+                        session.runStatus = "PASS";
+                        session.steps.push({ step: i + 1, action: "finish", reasoning: actionObj.reasoning });
+                        await updatePIPOverlay(page, "Task Finished 👌");
+                        break;
+                    }
+                    
+                    if (actionObj.action === "fail") {
+                        session.runStatus = "FAIL";
+                        session.steps.push({ step: i + 1, action: "fail", reasoning: actionObj.reasoning });
+                        await updatePIPOverlay(page, "Task failed: " + actionObj.reasoning);
+                        break;
+                    }
+
+                    session.steps.push({ 
+                        step: i + 1, 
+                        action: actionObj.action, 
+                        selector: actionObj.elementId || "", 
+                        value: actionObj.value || "", 
+                        reasoning: actionObj.reasoning || "" 
                     });
-                    break;
+
+                    await updatePIPOverlay(page, actionObj.action + ": " + actionObj.reasoning);
+
+                    try {
+                        let stepNote = "";
+                        if (actionObj.action === "click" && actionObj.elementId) {
+                            const selector = '[data-playwright-id="' + actionObj.elementId + '"]';
+                            await page.waitForSelector(selector, { state: "visible", timeout: 3000 }).catch(() => {});
+                            await highlightElement(page, selector);
+                            await page.click(selector, { timeout: 4000 });
+                            stepNote = "Clicked element " + actionObj.elementId;
+                        } else if (actionObj.action === "fill" && actionObj.elementId) {
+                            const selector = '[data-playwright-id="' + actionObj.elementId + '"]';
+                            await page.waitForSelector(selector, { state: "visible", timeout: 3000 }).catch(() => {});
+                            await highlightElement(page, selector);
+                            await page.fill(selector, actionObj.value || "", { timeout: 4000 });
+                            stepNote = "Filled element " + actionObj.elementId + " with '" + actionObj.value + "'";
+                        } else if (actionObj.action === "navigate" && actionObj.value) {
+                            await page.goto(actionObj.value, { waitUntil: "commit", timeout: 20000 }).catch(() => {});
+                            await page.waitForLoadState("domcontentloaded", { timeout: 2000 }).catch(() => {});
+                            await injectClickHighlighter(page);
+                            stepNote = "Navigated to " + actionObj.value;
+                        } else if (actionObj.action === "scroll_down") {
+                            await page.evaluate(() => window.scrollBy(0, 500));
+                        } else if (actionObj.action === "scroll_up") {
+                            await page.evaluate(() => window.scrollBy(0, -500));
+                        } else if (actionObj.action === "wait") {
+                            await page.waitForTimeout(2000);
+                            stepNote = "Waited 2 seconds";
+                        }
+                        
+                        const isFinished = 
+                            actionObj.action === "finish" || 
+                            actionObj.action === "fail" || 
+                            actionObj.action === "wait" || 
+                            actionObj.action === "scroll_down" || 
+                            actionObj.action === "scroll_up";
+                            
+                        if (!isFinished) {
+                           // Try to let the page settle briefly after clicks/fills but do not wait statically
+                           await page.waitForLoadState("domcontentloaded", { timeout: 1000 }).catch(() => {});
+                        }
+                        
+                        actionHistory += "Step " + (i + 1) + ": " + actionObj.action + ". " + stepNote + "\\n";
+                        
+                    } catch (actionErr: any) {
+                        actionHistory += "Step " + (i + 1) + ": " + actionObj.action + " failed: " + actionErr.message + "\\n";
+                        await updatePIPOverlay(page, "Retrying...");
+                        await page.waitForTimeout(500); // Only static wait on failure
+                    }
                 }
+
+                if (session.runStatus === "RUNNING") session.runStatus = "FAIL";
                 
-                if (actionObj.action === "fail") {
-                    status = "fail";
-                    errorMessage = "Agent declared failure: " + actionObj.reasoning;
-                    steps.push({
-                        action: "fail",
-                        reasoning: errorMessage,
-                        screenshot: await page.screenshot({ fullPage: false }).then(b => `data:image/png;base64,${b.toString('base64')}`).catch(() => "")
-                    });
-                    break;
+            } catch (err: any) {
+                const session = sessionStore.get(sessionId) as any;
+                if (session) {
+                    session.runStatus = "FAIL";
+                    session.consoleLogs.push(err.message);
+                }
+            } finally {
+                const session = sessionStore.get(sessionId) as any;
+                if (session) {
+                    await connectToDatabase();
+                    await QAAssistantSession.create({
+                        userId: "demo-user",
+                        url,
+                        instruction,
+                        results: {
+                            status: session.runStatus.toLowerCase(),
+                            steps: session.steps.map((s: any) => ({
+                                action: s.action,
+                                selector: s.selector,
+                                value: s.value,
+                                reasoning: s.reasoning,
+                                screenshot: session.latestScreenshot ? "data:image/png;base64," + session.latestScreenshot : null
+                            })),
+                            totalDurationMs: Date.now() - session.createdAt
+                        }
+                    }).catch(err => {});
                 }
 
-                // Execute action
-                if (actionObj.action === "click") {
-                    if (!actionObj.elementId) throw new Error("Agent attempted to click without an elementId.");
-                    await page.click(`[data-playwright-id="${actionObj.elementId}"]`, { timeout: 10000 });
-                } else if (actionObj.action === "fill") {
-                    if (!actionObj.elementId) throw new Error("Agent attempted to fill without an elementId.");
-                    await page.fill(`[data-playwright-id="${actionObj.elementId}"]`, actionObj.value || "", { timeout: 10000 });
-                } else if (actionObj.action === "navigate") {
-                    if (!actionObj.value) throw new Error("Agent attempted to navigate without a URL.");
-                    await page.goto(actionObj.value, { waitUntil: "networkidle", timeout: 15000 });
-                }
-                
-                await page.waitForTimeout(1500); // allow transitions
-                await page.waitForLoadState("networkidle").catch(() => {}); // ensure SPA loaders finish
-
-                // Take screenshot AFTER action
-                const screenshotBuf = await page.screenshot({ fullPage: false }).catch(() => null);
-                const screenshotB64 = screenshotBuf ? `data:image/png;base64,${screenshotBuf.toString('base64')}` : "";
-
-                // Append to action history for the next prompt iteration
-                actionHistory += `Step ${i + 1}: ${actionObj.action} on elementId ${actionObj.elementId || actionObj.value || 'page'}. Reason: ${actionObj.reasoning}\n`;
-
-                // Store step
-                steps.push({
-                    action: actionObj.action,
-                    selector: actionObj.elementId || "",
-                    value: actionObj.value || "",
-                    url: currentUrl,
-                    reasoning: actionObj.reasoning || "",
-                    screenshot: screenshotB64
-                });
+                await new Promise(r => setTimeout(r, 2000));
+                await browser.close().catch(() => {});
             }
-            
-            // If looped 10 times without finishing
-            if (steps.length === 10 && steps[steps.length - 1].action !== "finish") {
-                status = "fail";
-                errorMessage = "Maximum 10 steps reached without finishing the instruction.";
-            }
-
-        } catch (error: any) {
-            status = "fail";
-            errorMessage = error.message;
-            
-            // Take final failure screenshot
-            const sc = await page.screenshot({ fullPage: false }).catch(() => null);
-            if (sc) {
-                steps.push({
-                    action: "error",
-                    reasoning: "Execution encountered an error: " + errorMessage,
-                    screenshot: `data:image/png;base64,${sc.toString('base64')}`
-                });
-            }
-        } finally {
-            await page.close();
-            await browser.close();
-        }
-
-        const totalDurationMs = Date.now() - startTime;
-
-        const results = {
-            status,
-            errorMessage,
-            steps,
-            totalDurationMs
         };
+        runAgent();
 
-        // Save session
-        const session = await QAAssistantSession.create({
-            userId,
-            url,
-            instruction,
-            results,
-        });
-
-        return NextResponse.json(results);
+        return NextResponse.json({ sessionId });
 
     } catch (error: any) {
-        console.error("[api/ai-qa-assistant agent]", error);
-        return NextResponse.json({ error: error.message || "Agent execution failed" }, { status: 500 });
+        return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

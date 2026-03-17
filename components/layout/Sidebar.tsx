@@ -29,6 +29,12 @@ const navItems = [
     color: "#3b82f6",
   },
   {
+    href: "/test-flows",
+    label: "Automated Tests",
+    icon: PlayCircle,
+    color: "#10b981",
+  },
+  {
     href: "/test-cases",
     label: "Test Case Generator",
     icon: ClipboardList,
@@ -52,12 +58,6 @@ const navItems = [
     label: "AI Smoke Tester",
     icon: ShieldCheck,
     color: "#f59e0b",
-  },
-  {
-    href: "/test-flows",
-    label: "Automated Tests",
-    icon: PlayCircle,
-    color: "#10b981",
   },
   {
     href: "/ai-qa-assistant",

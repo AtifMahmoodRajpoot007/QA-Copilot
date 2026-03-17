@@ -4,7 +4,8 @@ import TestCase from "@/models/TestCase";
 import BugReport from "@/models/BugReport";
 import RegressionAnalysis from "@/models/RegressionAnalysis";
 import SmokeTestReport from "@/models/SmokeTestReport";
-import RegressionScript from "@/models/RegressionScript";
+import TestFlow from "@/models/TestFlow";
+import FlowRun from "@/models/FlowRun";
 import QAAssistantSession from "@/models/QAAssistantSession";
 
 export const dynamic = "force-dynamic";
@@ -13,15 +14,16 @@ export async function GET() {
     try {
         await connectToDatabase();
 
-        // Count documents directly from each collection
+        // Count documents from each collection
         const totalTestCases = await TestCase.countDocuments();
         const totalBugReports = await BugReport.countDocuments();
         const totalRegressionAnalyses = await RegressionAnalysis.countDocuments();
         const totalSmokeTests = await SmokeTestReport.countDocuments();
-        const totalRegressionScripts = await RegressionScript.countDocuments();
+        // "Automated Tests" = saved test flows (recorded/generated)
+        const totalAutomatedTests = await TestFlow.countDocuments();
         const totalAssistantSessions = await QAAssistantSession.countDocuments();
 
-        // New Smoke Test Metrics
+        // Smoke Test Metrics
         const smokeTestStats = await SmokeTestReport.aggregate([
             {
                 $group: {
@@ -37,14 +39,15 @@ export async function GET() {
             ? Math.round((smokeTestStats[0]?.passCount / totalSmokeTests) * 100)
             : 100;
 
-        // AI Assistant Metrics
+        // AI Assistant Metrics — results is an embedded object (not array), use direct $group
         const assistantStats = await QAAssistantSession.aggregate([
-            { $unwind: "$results" },
             {
                 $group: {
                     _id: null,
                     totalTests: { $sum: 1 },
-                    passCount: { $sum: { $cond: [{ $eq: ["$results.status", "pass"] }, 1, 0] } }
+                    passCount: {
+                        $sum: { $cond: [{ $eq: ["$results.status", "pass"] }, 1, 0] }
+                    }
                 }
             }
         ]);
@@ -53,22 +56,32 @@ export async function GET() {
             ? Math.round((assistantStats[0]?.passCount / assistantStats[0]?.totalTests) * 100)
             : 100;
 
-        // Calculation Logic (Expanded):
+        // Automated test run pass rate (from FlowRun collection)
+        const flowRunStats = await FlowRun.aggregate([
+            {
+                $group: {
+                    _id: null,
+                    totalRuns: { $sum: 1 },
+                    passCount: { $sum: { $cond: [{ $eq: ["$overallStatus", "PASS"] }, 1, 0] } }
+                }
+            }
+        ]);
+
+        // Time saved calculation:
         // Each Test Case = 10 mins
         // Each Bug Enhancement = 8 mins
         // Each Regression Analysis = 15 mins
-        // Each Smoke Test = 20 mins (Automation saves manual execution)
-        // Each Recorded Script = 30 mins (Saves scripting time)
-        // Each AI Assistant Test = 5 mins (Saves manual execution)
+        // Each Smoke Test = 20 mins
+        // Each Automated Test Flow = 30 mins
+        // Each AI Assistant Session = 5 mins
         const totalMinutes =
             (totalTestCases * 10) +
             (totalBugReports * 8) +
             (totalRegressionAnalyses * 15) +
             (totalSmokeTests * 20) +
-            (totalRegressionScripts * 30) +
-            ((assistantStats[0]?.totalTests || 0) * 5);
+            (totalAutomatedTests * 30) +
+            (totalAssistantSessions * 5);
 
-        // Convert to hours with 2 decimal precision
         const timeSavedHours = parseFloat((totalMinutes / 60).toFixed(2));
 
         return NextResponse.json({
@@ -76,7 +89,7 @@ export async function GET() {
             totalBugReports,
             totalRegressionAnalyses,
             totalSmokeTests,
-            totalRegressionScripts,
+            totalRegressionScripts: totalAutomatedTests,   // keep field name for frontend compat
             totalAssistantSessions,
             assistantSuccessRate,
             smokeSuccessRate,

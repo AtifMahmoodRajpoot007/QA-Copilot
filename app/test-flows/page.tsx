@@ -48,19 +48,19 @@ function ActionBadge({ action }: { action: string }) {
     const config = ACTION_MAP[action] || { color: "#64748b", icon: Activity };
     const Icon = config.icon;
     return (
-        <span style={{ 
+        <span style={{
             display: "inline-flex",
             alignItems: "center",
             gap: "5px",
-            fontSize: "0.65rem", 
-            fontWeight: "700", 
-            textTransform: "uppercase", 
-            padding: "3px 8px", 
-            borderRadius: "6px", 
-            background: `${config.color}15`, 
-            color: config.color, 
-            border: `1px solid ${config.color}30`, 
-            whiteSpace: "nowrap" 
+            fontSize: "0.65rem",
+            fontWeight: "700",
+            textTransform: "uppercase",
+            padding: "3px 8px",
+            borderRadius: "6px",
+            background: `${config.color}15`,
+            color: config.color,
+            border: `1px solid ${config.color}30`,
+            whiteSpace: "nowrap"
         }}>
             <Icon size={11} strokeWidth={2.5} />
             {action}
@@ -70,39 +70,39 @@ function ActionBadge({ action }: { action: string }) {
 
 function StepCard({ step, index, compact = false }: { step: FlowStep; index: number; compact?: boolean }) {
     return (
-        <div style={{ 
-            padding: compact ? "8px 12px" : "12px 16px", 
-            borderRadius: "10px", 
-            background: "rgba(255,255,255,0.02)", 
-            border: "1px solid var(--border)", 
-            display: "flex", 
-            alignItems: "center", 
+        <div style={{
+            padding: compact ? "8px 12px" : "12px 16px",
+            borderRadius: "10px",
+            background: "rgba(255,255,255,0.02)",
+            border: "1px solid var(--border)",
+            display: "flex",
+            alignItems: "center",
             gap: "12px",
             transition: "all 0.2s"
         }}>
             <span style={{ fontSize: "0.75rem", fontWeight: "700", color: "var(--text-muted)", width: "18px" }}>{step.step || index + 1}</span>
             <ActionBadge action={step.action} />
             <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ 
-                    fontSize: compact ? "0.78rem" : "0.85rem", 
-                    color: "var(--text-secondary)", 
+                <div style={{
+                    fontSize: compact ? "0.78rem" : "0.85rem",
+                    color: "var(--text-secondary)",
                     fontWeight: "500",
-                    overflow: "hidden", 
-                    textOverflow: "ellipsis", 
-                    whiteSpace: "nowrap" 
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap"
                 }}>
                     {step.label || `${step.action} ${step.selector || step.url || ""}`}
                 </div>
                 {!compact && (step.selector || step.url || step.value) && (
-                    <div style={{ 
-                        fontSize: "0.7rem", 
-                        color: "var(--text-muted)", 
-                        fontFamily: "monospace", 
+                    <div style={{
+                        fontSize: "0.7rem",
+                        color: "var(--text-muted)",
+                        fontFamily: "monospace",
                         marginTop: "4px",
                         opacity: 0.7,
-                        overflow: "hidden", 
-                        textOverflow: "ellipsis", 
-                        whiteSpace: "nowrap" 
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap"
                     }}>
                         {step.url || step.selector || step.value}
                     </div>
@@ -195,28 +195,28 @@ export default function TestFlowsPage() {
 
     // ── Run flow ──
     async function handleRun(flow: TestFlow) {
-        setRunningId(flow._id); setRunBanner({ flowName: flow.name, status: "RUNNING", msg: "Execution started in background..." });
+        setRunningId(flow._id); 
         try {
             const r = await fetch(`/api/test-flows/run/${flow._id}`, { method: "POST" });
             const d = await r.json();
             if (!r.ok) throw new Error(d.error || "Run failed");
-            
+
             setLiveSessionId(d.sessionId);
             setLiveSteps(flow.steps);
             setLiveResults([]);
             setLiveRunStatus("RUNNING");
             setLiveScreenshot(null);
             setLiveRunActive(true);
-            
+
             pollingRef.current = setInterval(async () => {
                 const pr = await fetch(`/api/flows/session/${d.sessionId}`);
-                if (pr.ok) { 
-                    const pd = await pr.json(); 
+                if (pr.ok) {
+                    const pd = await pr.json();
                     if (pd.runStatus !== "RUNNING") {
                         clearInterval(pollingRef.current!);
-                        setRunBanner({ 
-                            flowName: flow.name, 
-                            status: pd.runStatus, 
+                        setRunBanner({
+                            flowName: flow.name,
+                            status: pd.runStatus,
                             msg: pd.runStatus === "PASS" ? "Test completed successfully." : "Test failed. See results for details.",
                             consoleLogs: pd.consoleLogs,
                             networkFailures: pd.networkFailures
@@ -235,9 +235,9 @@ export default function TestFlowsPage() {
                     fetchRuns();
                 }
             }, 1000);
-            
-        } catch (e: any) { 
-            setRunBanner({ flowName: flow.name, status: "FAIL", msg: e.message }); 
+
+        } catch (e: any) {
+            setRunBanner({ flowName: flow.name, status: "FAIL", msg: e.message });
             setRunningId(null);
         }
     }
@@ -260,10 +260,10 @@ export default function TestFlowsPage() {
             setRecordSteps([{ step: 1, action: "navigate", label: `Navigate to ${recordUrl}`, url: recordUrl }]);
             pollingRef.current = setInterval(async () => {
                 const pr = await fetch(`/api/flows/session/${d.sessionId}`);
-                if (pr.ok) { 
-                    const pd = await pr.json(); 
-                    setRecordSteps(pd.steps); 
-                    setScreenshot(pd.screenshot || pd.latestScreenshot); 
+                if (pr.ok) {
+                    const pd = await pr.json();
+                    setRecordSteps(pd.steps);
+                    setScreenshot(pd.screenshot || pd.latestScreenshot);
                 } else {
                     // Browser closed
                     clearInterval(pollingRef.current!);
@@ -295,8 +295,8 @@ export default function TestFlowsPage() {
         if (pollingRef.current) clearInterval(pollingRef.current);
         try {
             await fetch(`/api/flows/session/${liveSessionId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "stop" }) });
-        } catch(e){}
-        setLiveRunActive(false); 
+        } catch (e) { }
+        setLiveRunActive(false);
         setLiveSessionId(null);
         fetchRuns();
     }
@@ -430,12 +430,12 @@ export default function TestFlowsPage() {
                                         const result = liveResults.find(r => r.step === step.step);
                                         const isCurrent = liveRunStatus === "RUNNING" && liveResults.length === idx;
                                         return (
-                                            <div key={idx} style={{ 
-                                                display: "flex", 
-                                                alignItems: "center", 
-                                                gap: "12px", 
-                                                padding: "10px 14px", 
-                                                borderRadius: "10px", 
+                                            <div key={idx} style={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: "12px",
+                                                padding: "10px 14px",
+                                                borderRadius: "10px",
                                                 background: isCurrent ? "rgba(139,92,246,0.08)" : result ? (result.status === "PASS" ? "rgba(16,185,129,0.05)" : "rgba(239,68,68,0.05)") : "rgba(255,255,255,0.02)",
                                                 border: isCurrent ? "1px solid rgba(139,92,246,0.2)" : "1px solid var(--border)",
                                                 transition: "all 0.3s ease"
@@ -456,18 +456,43 @@ export default function TestFlowsPage() {
                             </div>
                         </div>
 
-                        {/* Summary Card */}
+                        {/* Summary Card and Completion Modal */}
                         {liveRunStatus !== "RUNNING" && (
-                            <div className="animate-slide-up glass-card" style={{ padding: "16px", background: liveRunStatus === "PASS" ? "rgba(16,185,129,0.1)" : "rgba(239,68,68,0.1)", border: `1px solid ${liveRunStatus === "PASS" ? "#10b98144" : "#ef444444"}` }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                                    <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: liveRunStatus === "PASS" ? "#10b981" : "#ef4444", display: "flex", alignItems: "center", justifyContent: "center", color: "white" }}>
-                                        {liveRunStatus === "PASS" ? <Check size={24} /> : <AlertTriangle size={24} />}
+                            <div className="animate-slide-up" style={{ marginTop: "12px" }}>
+                                {liveRunStatus === "PASS" ? (
+                                    <div style={{ background: "rgba(240, 246, 255, 1)", borderRadius: "12px", padding: "24px", display: "flex", alignItems: "center", gap: "20px", position: "relative", border: "1px solid rgba(219, 234, 254, 1)", boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)" }}>
+                                        <div style={{ width: "60px", height: "60px", borderRadius: "50%", background: "white", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.05)" }}>
+                                            <div style={{ fontSize: "30px" }}>👌</div>
+                                        </div>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ fontWeight: "800", fontSize: "1.1rem", color: "#1e293b", letterSpacing: "0.05em", marginBottom: "4px" }}>TEST COMPLETED SUCCESSFULLY</div>
+                                            <button 
+                                                onClick={() => { setLiveRunActive(false); setRunBanner(null); setTab("flows"); fetchFlows(); }} 
+                                                style={{ background: "none", border: "none", padding: 0, color: "#334155", textDecoration: "underline", fontSize: "0.95rem", fontWeight: "600", cursor: "pointer" }}
+                                            >
+                                                Go back to the tests
+                                            </button>
+                                        </div>
+                                        <button 
+                                            onClick={() => { setLiveRunActive(false); setRunBanner(null); }} 
+                                            style={{ position: "absolute", top: "12px", right: "12px", background: "none", border: "none", cursor: "pointer", color: "#64748b" }}
+                                        >
+                                            <X size={18} />
+                                        </button>
                                     </div>
-                                    <div>
-                                        <div style={{ fontWeight: "800", fontSize: "1.1rem" }}>Execution {liveRunStatus === "PASS" ? "Successful" : "Failed"}</div>
-                                        <div style={{ fontSize: "0.85rem", opacity: 0.8 }}>Test completed with {liveResults.filter(r => r.status === "PASS").length} passed steps.</div>
+                                ) : (
+                                    <div className="glass-card" style={{ padding: "16px", background: "rgba(239,68,68,0.1)", border: "1px solid #ef444444" }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                                            <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: "#ef4444", display: "flex", alignItems: "center", justifyContent: "center", color: "white" }}>
+                                                <AlertTriangle size={24} />
+                                            </div>
+                                            <div>
+                                                <div style={{ fontWeight: "800", fontSize: "1.1rem" }}>Execution Failed</div>
+                                                <div style={{ fontSize: "0.85rem", opacity: 0.8 }}>Test completed with {liveResults.filter(r => r.status === "PASS").length} passed steps.</div>
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -488,7 +513,7 @@ export default function TestFlowsPage() {
                         </div>
                         <h1 style={{ fontSize: "1.6rem", fontWeight: "700", color: "var(--text-primary)", margin: 0 }}>Automated Tests</h1>
                     </div>
-                    <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", margin: 0 }}>Record, manage, and run automated browser tests — with AI Root Cause Analysis (like Testim).</p>
+                    <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", margin: 0 }}>Record, manage, and run automated browser tests — with AI Root Cause Analysis.</p>
                 </div>
                 <button className="btn-primary" style={{ background: "#06b6d4", padding: "0 20px", height: "42px" }} onClick={() => setShowNewTest(true)}>
                     <Repeat size={15} fill="white" /> New Test
@@ -808,13 +833,13 @@ export default function TestFlowsPage() {
                         </div>
                         <h2 style={{ fontSize: "1.1rem", fontWeight: "700", color: "var(--text-primary)", marginBottom: "8px" }}>Setup New Test</h2>
                         <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginBottom: "20px", lineHeight: 1.5 }}>Enter the starting URL for your test. A headless browser will open, allowing you to record your actions.</p>
-                        
+
                         <div style={{ textAlign: "left", marginBottom: "20px" }}>
                             <label style={{ display: "block", fontSize: "0.7rem", fontWeight: "700", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: "6px" }}>Starting URL</label>
                             <input type="url" autoFocus className="input-field" placeholder="https://example.com" value={recordUrl} onChange={e => setRecordUrl(e.target.value)} onKeyDown={e => e.key === "Enter" && handleStartRecording()} />
                             {recError && <div style={{ marginTop: "10px", padding: "8px 12px", borderRadius: "6px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", color: "#ef4444", fontSize: "0.78rem", display: "flex", alignItems: "center", gap: "6px" }}><AlertCircle size={12} />{recError}</div>}
                         </div>
-                        
+
                         <div style={{ display: "flex", gap: "8px" }}>
                             <button className="btn-secondary" style={{ flex: 1 }} onClick={() => setShowNewTest(false)}>Cancel</button>
                             <button className="btn-primary" style={{ flex: 1, background: "#06b6d4" }} onClick={handleStartRecording} disabled={!recordUrl.trim() || recLoading}>

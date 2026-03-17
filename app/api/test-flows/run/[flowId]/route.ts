@@ -24,24 +24,36 @@ export async function POST(
 
         const sessionId = generateSessionId();
 
-        // Launch visible browser
         const browser = await chromium.launch({ 
             headless: false,
             args: ["--ignore-certificate-errors", "--ignore-ssl-errors", "--start-maximized"]
         });
         const context = await browser.newContext({
             ignoreHTTPSErrors: true,
-            viewport: null, // use full screen
+            viewport: null, 
+        });
+
+        // Block heavy/analytics resources to speed up page loads during execution
+        await context.route("**/*", (route) => {
+            const req = route.request();
+            const type = req.resourceType();
+            const url = req.url();
+            const blockedTypes = ['media', 'other'];
+            const blockList = ['google-analytics', 'doubleclick', 'facebook', 'hotjar', 'mixpanel'];
+            
+            if (blockedTypes.includes(type) || blockList.some(domain => url.includes(domain))) {
+                route.abort();
+            } else {
+                route.continue();
+            }
         });
         const page = await context.newPage();
 
-        // Initial setup
         const { consoleLogs, networkFailures } = attachErrorMonitor(page);
         await forceFocus(page);
-        await injectPIPOverlay(page, "run", `Starting: ${flow.name}`);
+        await injectPIPOverlay(page, "run", "Starting: " + flow.name);
         await injectClickHighlighter(page);
 
-        // Store session
         const session: LiveRunSession = {
             browser,
             context,
@@ -57,28 +69,27 @@ export async function POST(
         };
         sessionStore.set(sessionId, session);
 
-        // Start execution in "background" from API perspective (fire and forget)
         (async () => {
             const stepResults: any[] = [];
-            let overallStatus: "PASS" | "FAIL" | "PARTIAL" = "PASS";
+            let overallStatus: "PASS" | "FAIL" | "PARTIAL" = "PASS" as const;
             let failedStep = "";
             const runStart = Date.now();
 
             try {
-                // Navigate to target URL first if needed
                 if (flow.targetUrl) {
-                    await page.goto(flow.targetUrl, { waitUntil: "domcontentloaded", timeout: 20000 });
+                    await page.goto(flow.targetUrl, { waitUntil: "commit", timeout: 15000 }).catch(() => {});
                 }
 
                 for (const step of flow.steps) {
-                    if (!sessionStore.has(sessionId)) break; // stop if session ended
+                    if (!sessionStore.has(sessionId)) break;
 
-                    const label = step.label || `${step.action} ${step.selector || ""}`;
-                    await updatePIPOverlay(page, `Step ${step.step}: ${step.action}`, label);
+                    const label = step.label || (step.action + " " + (step.selector || ""));
+                    await updatePIPOverlay(page, "Step " + step.step + ": " + step.action, label);
                     
                     if (step.selector) {
+                        // Smart wait for element rather than simple timeout
+                        await page.waitForSelector(step.selector, { state: 'visible', timeout: 5000 }).catch(() => {});
                         await highlightElement(page, step.selector);
-                        await page.waitForTimeout(500);
                     }
 
                     const stepStart = Date.now();
@@ -86,13 +97,12 @@ export async function POST(
                     let stepError = "";
 
                     try {
-                        // Action execution logic (simplified for inline but robust)
                         switch (step.action) {
-                            case "navigate": await page.goto(step.url || step.value, { waitUntil: "load", timeout: 30000 }); break;
-                            case "click": await page.click(step.selector!, { timeout: 10000 }); break;
+                            case "navigate": await page.goto(step.url || step.value, { waitUntil: "commit", timeout: 15000 }).catch(() => {}); break;
+                            case "click": await page.click(step.selector!, { timeout: 5000 }); break;
                             case "fill": 
-                            case "type": await page.fill(step.selector!, step.value || "", { timeout: 10000 }); break;
-                            case "select": await page.selectOption(step.selector!, step.value || ""); break;
+                            case "type": await page.fill(step.selector!, step.value || "", { timeout: 5000 }); break;
+                            case "select": await page.selectOption(step.selector!, step.value || "", { timeout: 5000 }); break;
                             case "wait": await page.waitForTimeout(parseInt(step.value || "1000")); break;
                         }
                     } catch (e: any) {
@@ -111,7 +121,6 @@ export async function POST(
 
                     session.stepResults = [...stepResults];
                     
-                    // Take live screenshot
                     const scBuf = await page.screenshot({ fullPage: false }).catch(() => null);
                     if (scBuf) session.latestScreenshot = scBuf.toString("base64");
 
@@ -127,7 +136,6 @@ export async function POST(
 
             session.runStatus = overallStatus;
             
-            // Persist final result to DB
             const finalScreenshot = session.latestScreenshot;
             await FlowRun.create({
                 flowId: flow._id,
@@ -141,7 +149,6 @@ export async function POST(
                 screenshot: finalScreenshot,
             });
 
-            // Close browser after a small delay so user can see completion
             await page.waitForTimeout(2000);
             await browser.close().catch(() => {});
             sessionStore.delete(sessionId);
