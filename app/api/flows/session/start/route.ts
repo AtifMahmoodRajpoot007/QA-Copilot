@@ -123,7 +123,7 @@ const INJECT_SCRIPT = `
 
         const container = document.createElement('div');
         container.id = '__qa_stop_container';
-        container.style.cssText = 'position: fixed; bottom: 24px; left: 24px; z-index: 2147483647; display: flex; align-items: center; gap: 14px; font-family: system-ui, -apple-system, sans-serif; pointer-events: none; opacity: 0; transform: translateX(-20px); transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);';
+        container.style.cssText = 'position: fixed; bottom: 24px; right: 24px; z-index: 2147483647; display: flex; align-items: center; gap: 14px; font-family: system-ui, -apple-system, sans-serif; pointer-events: none; opacity: 0; transform: translateX(20px); transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);';
         
         const stopBtn = document.createElement('button');
         stopBtn.id = '__qa_stop_btn';
@@ -132,16 +132,16 @@ const INJECT_SCRIPT = `
         
         const tooltip = document.createElement('div');
         tooltip.innerText = 'Click to stop';
-        tooltip.style.cssText = 'background: #1e293b; color: white; padding: 10px 16px; border-radius: 8px; font-weight: 600; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); opacity: 0; transform: translateX(-10px); transition: all 0.3s ease; pointer-events: none; white-space: nowrap; position: relative; display: flex; align-items: center;';
+        tooltip.style.cssText = 'background: #1e293b; color: white; padding: 10px 16px; border-radius: 8px; font-weight: 600; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); opacity: 0; transform: translateX(10px); transition: all 0.3s ease; pointer-events: none; white-space: nowrap; position: relative; display: flex; align-items: center;';
         
         // Tooltip arrow
         const arrow = document.createElement('div');
-        arrow.style.cssText = 'position: absolute; left: -6px; top: 50%; transform: translateY(-50%); width: 12px; height: 12px; background: #1e293b; rotate: 45deg; border-radius: 2px;';
+        arrow.style.cssText = 'position: absolute; right: -6px; top: 50%; transform: translateY(-50%); width: 12px; height: 12px; background: #1e293b; rotate: 45deg; border-radius: 2px;';
         tooltip.appendChild(arrow);
         
-        // Append button first, then tooltip to keep it on the right
-        container.appendChild(stopBtn);
+        // Tooltip first, then button to keep it on the left
         container.appendChild(tooltip);
+        container.appendChild(stopBtn);
         
         document.body.appendChild(container);
 
@@ -151,16 +151,21 @@ const INJECT_SCRIPT = `
             container.style.transform = 'translateX(0)';
         });
 
-        // Initial tooltip display for 2 seconds
+        // Initial tooltip display for 2 seconds - ONLY IF NOT ALREADY SHOWN IN THIS SESSION
         let hideTimeout;
-        setTimeout(() => {
-            tooltip.style.opacity = '1';
-            tooltip.style.transform = 'translateX(0)';
-            hideTimeout = setTimeout(() => {
-                tooltip.style.opacity = '0';
-                tooltip.style.transform = 'translateX(-10px)';
-            }, 2000);
-        }, 600);
+        const alreadyShown = sessionStorage.getItem('__qa_tooltip_shown');
+        
+        if (!alreadyShown) {
+            setTimeout(() => {
+                tooltip.style.opacity = '1';
+                tooltip.style.transform = 'translateX(0)';
+                sessionStorage.setItem('__qa_tooltip_shown', 'true');
+                hideTimeout = setTimeout(() => {
+                    tooltip.style.opacity = '0';
+                    tooltip.style.transform = 'translateX(10px)';
+                }, 2000);
+            }, 600);
+        }
         
         stopBtn.addEventListener('mouseenter', () => {
             clearTimeout(hideTimeout);
@@ -174,7 +179,7 @@ const INJECT_SCRIPT = `
             stopBtn.style.transform = 'scale(1) rotate(0deg)';
             stopBtn.style.background = '#ef4444';
             tooltip.style.opacity = '0';
-            tooltip.style.transform = 'translateX(-10px)';
+            tooltip.style.transform = 'translateX(10px)';
         });
         
         stopBtn.addEventListener('click', (e) => {
