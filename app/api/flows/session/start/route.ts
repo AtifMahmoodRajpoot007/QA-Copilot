@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { launchBrowser } from "@/lib/playwright";
+import { chromium } from "playwright";
 import { sessionStore, generateSessionId, cleanOldSessions, RecordingSession } from "@/lib/sessionStore";
 import { FlowStep } from "@/types";
 
@@ -185,7 +185,10 @@ export async function POST(req: NextRequest) {
         if (!url?.trim()) return NextResponse.json({ error: "URL is required" }, { status: 400 });
 
         const sessionId = generateSessionId();
-        const browser = await launchBrowser(); // visible browser
+        const browser = await chromium.launch({
+            headless: false,
+            args: ["--ignore-certificate-errors", "--ignore-ssl-errors", "--start-maximized"]
+        }); // visible browser
         const context = await browser.newContext({
             ignoreHTTPSErrors: true,
             userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",

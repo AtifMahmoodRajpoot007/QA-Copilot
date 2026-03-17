@@ -4,8 +4,7 @@
  * Used by /api/flows/run and any future scheduled runners.
  */
 
-import { chromium } from "playwright-core";
-import { launchBrowser } from "@/lib/playwright";
+import { chromium } from "playwright";
 import { attachErrorMonitor } from "./errorMonitor";
 
 export interface FlowStep {
@@ -90,7 +89,10 @@ export async function runFlow(
     steps: FlowStep[],
     targetUrl: string
 ): Promise<RunResult> {
-    const browser = await launchBrowser();
+    const browser = await chromium.launch({ 
+        headless: true,
+        args: ["--ignore-certificate-errors", "--ignore-ssl-errors"]
+    });
     const context = await browser.newContext({
         ignoreHTTPSErrors: true,
         userAgent:

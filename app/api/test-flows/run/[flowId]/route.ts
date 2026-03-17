@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chromium } from "playwright-core";
-import { launchBrowser } from "@/lib/playwright";
+import { chromium } from "playwright";
 import connectToDatabase from "@/lib/mongodb";
 import TestFlow from "@/models/TestFlow";
 import FlowRun from "@/models/FlowRun";
@@ -25,7 +24,10 @@ export async function POST(
 
         const sessionId = generateSessionId();
 
-        const browser = await launchBrowser();
+        const browser = await chromium.launch({ 
+            headless: false,
+            args: ["--ignore-certificate-errors", "--ignore-ssl-errors", "--start-maximized"]
+        });
         const context = await browser.newContext({
             ignoreHTTPSErrors: true,
             viewport: null, 

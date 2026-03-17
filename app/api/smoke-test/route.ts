@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chromium } from "playwright-core";
-import { launchBrowser } from "@/lib/playwright";
+import { chromium } from "playwright";
 import connectToDatabase from "@/lib/mongodb";
 import SmokeTestReport from "@/models/SmokeTestReport";
 
@@ -16,7 +15,7 @@ export async function POST(req: NextRequest) {
 
         await connectToDatabase();
 
-        const browser = await launchBrowser();
+        const browser = await chromium.launch({ headless: true });
         const context = await browser.newContext({
             userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             viewport: { width: 1280, height: 720 }

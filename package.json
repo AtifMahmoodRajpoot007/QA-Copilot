@@ -11,13 +11,12 @@
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "@playwright/test": "^1.58.2",
-    "cross-env": "^10.1.0",
     "dotenv": "^17.3.1",
     "jsdom": "^27.0.1",
     "lucide-react": "^0.576.0",
     "mongoose": "^9.2.3",
     "next": "16.1.6",
-    "playwright-core": "^1.58.2",
+    "playwright": "^1.58.2",
     "puppeteer": "^24.38.0",
     "react": "19.2.3",
     "react-dom": "19.2.3"
