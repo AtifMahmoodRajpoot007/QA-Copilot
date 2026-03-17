@@ -123,47 +123,70 @@ const INJECT_SCRIPT = `
 
         const container = document.createElement('div');
         container.id = '__qa_stop_container';
-        container.style.cssText = 'position: fixed; bottom: 20px; right: 20px; z-index: 2147483647; display: flex; align-items: center; gap: 12px; font-family: system-ui, -apple-system, sans-serif; pointer-events: none;';
+        container.style.cssText = 'position: fixed; bottom: 24px; left: 24px; z-index: 2147483647; display: flex; align-items: center; gap: 14px; font-family: system-ui, -apple-system, sans-serif; pointer-events: none; opacity: 0; transform: translateX(-20px); transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);';
         
         const stopBtn = document.createElement('button');
         stopBtn.id = '__qa_stop_btn';
         stopBtn.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="2" ry="2"></rect></svg>';
-        stopBtn.style.cssText = 'width: 56px; height: 56px; border-radius: 50%; background: #ef4444; border: 3px solid white; box-shadow: 0 4px 12px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform 0.2s, background 0.2s; pointer-events: auto; padding: 0; outline: none; margin: 0;';
-        const tooltip = document.createElement('div');
-        tooltip.innerText = 'Click to Stop Recording';
-        tooltip.style.cssText = 'background: white; color: #ef4444; padding: 8px 14px; border-radius: 8px; font-weight: 700; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border: 2px solid #ef4444; opacity: 1; transition: opacity 0.3s; pointer-events: none; white-space: nowrap;';
+        stopBtn.style.cssText = 'width: 56px; height: 56px; border-radius: 50%; background: #ef4444; border: 3px solid white; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); pointer-events: auto; padding: 0; outline: none; margin: 0; position: relative;';
         
-        container.appendChild(tooltip);
+        const tooltip = document.createElement('div');
+        tooltip.innerText = 'Click to stop';
+        tooltip.style.cssText = 'background: #1e293b; color: white; padding: 10px 16px; border-radius: 8px; font-weight: 600; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); opacity: 0; transform: translateX(-10px); transition: all 0.3s ease; pointer-events: none; white-space: nowrap; position: relative; display: flex; align-items: center;';
+        
+        // Tooltip arrow
+        const arrow = document.createElement('div');
+        arrow.style.cssText = 'position: absolute; left: -6px; top: 50%; transform: translateY(-50%); width: 12px; height: 12px; background: #1e293b; rotate: 45deg; border-radius: 2px;';
+        tooltip.appendChild(arrow);
+        
+        // Append button first, then tooltip to keep it on the right
         container.appendChild(stopBtn);
+        container.appendChild(tooltip);
         
         document.body.appendChild(container);
 
-        // Initial tooltip display for ~2 seconds
-        let hideTimeout = setTimeout(() => {
-            tooltip.style.opacity = '0';
-        }, 2000);
+        // Slide in animation
+        requestAnimationFrame(() => {
+            container.style.opacity = '1';
+            container.style.transform = 'translateX(0)';
+        });
+
+        // Initial tooltip display for 2 seconds
+        let hideTimeout;
+        setTimeout(() => {
+            tooltip.style.opacity = '1';
+            tooltip.style.transform = 'translateX(0)';
+            hideTimeout = setTimeout(() => {
+                tooltip.style.opacity = '0';
+                tooltip.style.transform = 'translateX(-10px)';
+            }, 2000);
+        }, 600);
         
         stopBtn.addEventListener('mouseenter', () => {
             clearTimeout(hideTimeout);
-            stopBtn.style.transform = 'scale(1.1)';
+            stopBtn.style.transform = 'scale(1.1) rotate(90deg)';
             stopBtn.style.background = '#dc2626';
             tooltip.style.opacity = '1';
+            tooltip.style.transform = 'translateX(0)';
         });
         
         stopBtn.addEventListener('mouseleave', () => {
-            stopBtn.style.transform = 'scale(1)';
+            stopBtn.style.transform = 'scale(1) rotate(0deg)';
             stopBtn.style.background = '#ef4444';
             tooltip.style.opacity = '0';
+            tooltip.style.transform = 'translateX(-10px)';
         });
         
         stopBtn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
+            stopBtn.style.transform = 'scale(0.9)';
             if (window.__qaStopRecordingSession) {
                 window.__qaStopRecordingSession();
                 stopBtn.style.background = '#991b1b';
                 tooltip.innerText = 'Stopping...';
                 tooltip.style.opacity = '1';
+                tooltip.style.transform = 'translateX(0)';
             }
         });
     }

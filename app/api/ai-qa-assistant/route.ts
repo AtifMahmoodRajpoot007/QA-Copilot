@@ -74,10 +74,9 @@ export async function POST(req: NextRequest) {
             const req = route.request();
             const type = req.resourceType();
             const url = req.url();
-            const blockedTypes = ['image', 'media', 'font', 'other'];
             const blockList = ['google-analytics', 'doubleclick', 'facebook', 'hotjar', 'mixpanel'];
             
-            if (blockedTypes.includes(type) || blockList.some(domain => url.includes(domain))) {
+            if (blockList.some(domain => url.includes(domain))) {
                 route.abort();
             } else {
                 route.continue();
