@@ -12,6 +12,7 @@ export async function GET(req: Request) {
         const sessions = await QAAssistantSession.find({ userId: "demo-user" })
             .sort({ createdAt: -1 })
             .limit(20)
+            .allowDiskUse(true)
             .lean();
 
         return NextResponse.json({ sessions });
