@@ -63,8 +63,13 @@ export async function POST(req: NextRequest) {
 
         const sessionId = Math.random().toString(36).substring(7);
         const browser = await chromium.launch({ 
-            headless: false, 
-            args: ["--start-maximized", "--no-sandbox"] 
+            headless: true, 
+            args: [
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu"
+            ] 
         });
         
         const context = await browser.newContext({ viewport: null });

@@ -1,10 +1,10 @@
 /**
  * services/flowRunner.ts
- * Playwright execution engine for running stored test flows.
- * Used by /api/flows/run and any future scheduled runners.
+ * A fully replicated Testim-style Executor for playback stability.
+ * Replaces the procedural runner with a robust, self-healing class architecture.
  */
 
-import { chromium } from "playwright";
+import { chromium, Page, Locator } from "playwright";
 import { attachErrorMonitor } from "./errorMonitor";
 
 export interface FlowStep {
@@ -42,209 +42,237 @@ export interface RunResult {
     screenshot: string;
 }
 
-async function findLocatorWithHealing(page: any, step: FlowStep, timeout: number) {
-    if (!step.selector && !step.selectors) return { locator: null, selectorUsed: "" };
-    
-    console.log(`[FlowRunner] Resolving locator for step: ${step.action} ${step.label || ''}`);
-    
-    // Build candidate locators based on priority
-    const candidates = [];
-    if (step.selectors) {
-        if (step.selectors.css) candidates.push({ type: 'css', val: step.selectors.css, locatorStr: step.selectors.css });
-        if (step.selectors.text) candidates.push({ type: 'text', val: step.selectors.text, locatorStr: `text="${step.selectors.text}"` });
-        if (step.selectors.placeholder) candidates.push({ type: 'placeholder', val: step.selectors.placeholder, locatorStr: `[placeholder="${step.selectors.placeholder}"]` });
-        if (step.selectors.role) {
-            if (step.selectors.text) {
-                candidates.push({ type: 'role-text', val: step.selectors.role, locatorStr: `role=${step.selectors.role}, name="${step.selectors.text}"` });
-            } else {
-                candidates.push({ type: 'role', val: step.selectors.role, locatorStr: `role=${step.selectors.role}` });
-            }
-        }
-        if (step.selectors.xpath) candidates.push({ type: 'xpath', val: step.selectors.xpath, locatorStr: `xpath=${step.selectors.xpath}` });
-    } else if (step.selector) {
-        // Fallback for old steps
-        candidates.push({ type: 'css', val: step.selector, locatorStr: step.selector });
+class TestimExecutor {
+    private page: Page;
+    private maxRetries = 3;
+
+    constructor(page: Page) {
+        this.page = page;
     }
 
-    if (candidates.length === 0 && step.label) {
-        // Old heuristic healing
-        const textMatch = step.label.match(/:\s*(.+)$/);
-        let textToUse = textMatch ? textMatch[1].trim() : step.label;
-        if (textToUse.length > 0 && textToUse.length < 50) {
-            candidates.push({ type: 'text', val: textToUse, locatorStr: `text="${textToUse}"` });
-        }
-    }
-
-    // Attempt each candidate iteratively
-    for (const cand of candidates) {
-        let locator;
+    /**
+     * Highlights an element briefly to visually debug actions
+     */
+    private async highlightElement(locator: Locator) {
         try {
-            if (cand.type === 'css' || cand.type === 'xpath' || cand.type === 'placeholder') {
-                locator = page.locator(cand.locatorStr);
-            } else if (cand.type === 'text') {
-                locator = page.getByText(cand.val, { exact: true });
-                if (await locator.count() === 0) {
-                     locator = page.getByText(cand.val);
-                }
-            } else if (cand.type === 'role-text') {
-                locator = page.getByRole(cand.val, { name: new RegExp(step.selectors?.text || '', 'i') });
-            } else if (cand.type === 'role') {
-                locator = page.getByRole(cand.val);
-            }
-            
-            // Refine to first match if multiple
-            locator = locator.first();
-            
-            // Fast count check to avoid waiting on non-existent elements
-            if (await locator.count() > 0) {
-                console.log(`[FlowRunner] Candidate found in DOM using strategy: ${cand.type} -> ${cand.locatorStr}`);
-                
-                // Smart auto-wait system: wait for attached and visible
-                await locator.waitFor({ state: 'attached', timeout: Math.min(timeout / 2, 5000) });
-                await locator.waitFor({ state: 'visible', timeout: Math.min(timeout / 2, 5000) });
-                
-                console.log(`[FlowRunner] Locator confirmed visible using strategy: ${cand.type}`);
-                return { locator, selectorUsed: cand.locatorStr };
-            }
-        } catch (e: any) {
-            console.log(`[FlowRunner] Candidate strategy ${cand.type} failed or timed out. Moving to next fallback.`);
-        }
-    }
-
-    // Fallback to original
-    console.log(`[FlowRunner] Self-healing exhausted. Proceeding with ultimate fallback.`);
-    if (step.selector) {
-        return { locator: page.locator(step.selector).first(), selectorUsed: step.selector };
-    }
-    return { locator: null, selectorUsed: "" };
-}
-
-async function executeAction(
-    page: any,
-    step: FlowStep
-): Promise<void> {
-    const timeout = 10000;
-    
-    switch (step.action) {
-        case "navigate":
-            const targetUrl = step.url || step.value;
-            console.log(`[FlowRunner] Navigating to: ${targetUrl}`);
-            await page.goto(targetUrl, {
-                waitUntil: "networkidle",
-                timeout: 30000,
+            await locator.evaluate((el: HTMLElement) => {
+                const originalOutline = el.style.outline;
+                const originalTransition = el.style.transition;
+                el.style.transition = 'outline 0.2s';
+                el.style.outline = '4px solid #3b82f6'; // Blue debug highlight
+                setTimeout(() => {
+                    el.style.outline = originalOutline;
+                    el.style.transition = originalTransition;
+                }, 400);
             });
-            break;
-
-        case "click":
-        case "fill":
-        case "type":
-        case "select":
-        case "press":
-        case "verify":
-            if (!step.selector && !step.selectors) break;
-            
-            let { locator, selectorUsed } = await findLocatorWithHealing(page, step, timeout);
-            if (!locator) break;
-            
-            // Highlight element for debugging / visual feedback before action
-            try {
-                await locator.evaluate((el: HTMLElement) => {
-                    const originalOutline = el.style.outline;
-                    const originalTransition = el.style.transition;
-                    el.style.transition = 'outline 0.2s';
-                    el.style.outline = '3px solid #f43f5e'; // Highlight in rose
-                    setTimeout(() => {
-                        el.style.outline = originalOutline;
-                        el.style.transition = originalTransition;
-                    }, 500);
-                });
-            } catch (e) {
-                // ignore highlight error if element is strictly cross-origin or detached right after
-            }
-
-            // Small pause for highlighting to be visible and element to stabilize
-            await page.waitForTimeout(300);
-
-            if (step.action === "click") {
-                await locator.scrollIntoViewIfNeeded();
-                // We use trial to ensure there's no overlays covering it. If there is, Playwright throws and executeStepWithRetry catches it
-                try {
-                    await locator.click({ timeout, trial: true });
-                    await locator.click({ timeout });
-                } catch (e) {
-                    console.warn(`[FlowRunner] Click trial failed, attempting force click...`);
-                    await locator.click({ timeout, force: true });
-                }
-            } else if (step.action === "fill" || step.action === "type") {
-                 // Ensure element is enabled before filling
-                const expectObj = await expectLocator(locator, timeout);
-                await expectObj.toBeEnabled();
-                await locator.fill(step.value || "", { timeout });
-            } else if (step.action === "select") {
-                const expectObj = await expectLocator(locator, timeout);
-                await expectObj.toBeEnabled();
-                await locator.selectOption(step.value || "", { timeout });
-            } else if (step.action === "press") {
-                await locator.press(step.value || "Enter", { timeout });
-            }
-            break;
-
-        case "wait":
-            const ms = parseInt(step.value || "1000");
-            console.log(`[FlowRunner] Waiting for ${ms}ms`);
-            await page.waitForTimeout(ms);
-            break;
-
-        default:
-            console.warn(`[FlowRunner] Unknown action: ${step.action}`);
-            break;
+            await this.page.waitForTimeout(200); // Visual pause
+        } catch (e) {
+            // Ignore cross-origin context issues or fast unmounts
+        }
     }
-}
 
-// Helper to wrap expect for playwright locator
-async function expectLocator(locator: any, timeout: number) {
-    // Playwright locator wait for enabled state
-    try {
-        await locator.waitFor({ state: 'visible', timeout });
-        // While not strictly a full expect(), this ensures playability 
-        // as fill/selectOption will auto-wait for actionability
-    } catch(e) {}
-    return {
-        toBeEnabled: async () => {} // Dummy for now, rely on actionability checks
-    };
-}
+    /**
+     * Resolves the best locator using multiple strategies sequentially and rigorously.
+     */
+    private async resolveSmartLocator(step: FlowStep, timeoutMs: number): Promise<{ locator: Locator | null, strategyUsed: string }> {
+        if (!step.selector && !step.selectors) return { locator: null, strategyUsed: "" };
 
-async function executeStepWithRetry(
-    page: any,
-    step: FlowStep,
-    retries = 3
-): Promise<{ status: "PASS" | "FAIL"; error: string }> {
-    for (let i = 0; i < retries; i++) {
-        try {
-            if (i > 0) {
-                console.log(`[FlowRunner] Retry ${i}/${retries-1} for step ${step.step}: ${step.action}`);
-                await page.waitForTimeout(500); // Backoff delay
+        console.log(`[TestimExecutor] Locating element phase for step: ${step.action} - ${step.label || ''}`);
+        const candidates: Array<{ type: string, str: string, getLoc: () => Locator }> = [];
+
+        // Build priority queue
+        if (step.selectors) {
+            if (step.selectors.css) {
+                 candidates.push({ type: 'Smart CSS', str: step.selectors.css, getLoc: () => this.page.locator(step.selectors!.css!) });
             }
-            await executeAction(page, step);
-            return { status: "PASS", error: "" };
-        } catch (err: any) {
-            console.error(`[FlowRunner] Step ${step.step} failed (attempt ${i+1}/${retries}):`, err.message);
-            if (i === retries - 1) {
-                return { status: "FAIL", error: err.message || "Step failed after retries" };
+            if (step.selectors.text) {
+                candidates.push({ type: 'Exact Text', str: step.selectors.text, getLoc: () => this.page.getByText(step.selectors!.text!, { exact: true }) });
+                candidates.push({ type: 'Partial Text', str: step.selectors.text, getLoc: () => this.page.getByText(step.selectors!.text!) });
+            }
+            if (step.selectors.placeholder) {
+                candidates.push({ type: 'Placeholder', str: step.selectors.placeholder, getLoc: () => this.page.getByPlaceholder(step.selectors!.placeholder!) });
+            }
+            if (step.selectors.role) {
+                candidates.push({ 
+                    type: 'Role + Name', 
+                    str: `${step.selectors.role} named ${step.selectors.text || ''}`, 
+                    getLoc: () => this.page.getByRole(step.selectors!.role as any, { name: new RegExp(step.selectors!.text || '', 'i') }) 
+                });
+            }
+            if (step.selectors.xpath) {
+                candidates.push({ type: 'XPath Fallback', str: step.selectors.xpath, getLoc: () => this.page.locator(`xpath=${step.selectors!.xpath}`) });
+            }
+        } else if (step.selector) {
+            candidates.push({ type: 'Legacy String', str: step.selector, getLoc: () => this.page.locator(step.selector!) });
+        }
+
+        // Test each candidate
+        for (const cand of candidates) {
+            try {
+                const locator = cand.getLoc().first();
+                // Ensure it exists without waiting too long
+                if (await locator.count() > 0) {
+                    console.log(`[TestimExecutor] 🔍 Strategy Success: ${cand.type} -> ${cand.str}`);
+                    // Ensure the element is structurally ready
+                    await locator.waitFor({ state: 'attached', timeout: timeoutMs });
+                    return { locator, strategyUsed: cand.type };
+                }
+            } catch (e) {
+                // Ignore timeout strings and move on
+            }
+        }
+        
+        console.warn(`[TestimExecutor] ⚠️ All smart strategies failed for step: ${step.label}`);
+        return { locator: null, strategyUsed: "Failed" };
+    }
+
+    /**
+     * The core action wrapper. Combines smart retries, waiting, execution, and verification.
+     */
+    private async safeExecute(step: FlowStep): Promise<void> {
+        const baseTimeout = Math.min(10000, 3000 + (step.action === 'navigate' ? 20000 : 0));
+        
+        for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+            try {
+                if (attempt > 1) {
+                    const backoff = 300 * Math.pow(2, attempt - 2); // 300ms, 600ms, etc.
+                    console.log(`[TestimExecutor] Retry ${attempt}/${this.maxRetries} for step ${step.step} in ${backoff}ms...`);
+                    await this.page.waitForTimeout(backoff);
+                }
+
+                // Wait for network to be idle to respect dynamic spinners/loaders
+                await this.page.waitForLoadState("domcontentloaded", { timeout: baseTimeout }).catch(() => {});
+
+                if (step.action === "navigate") {
+                    const targetUrl = step.url || step.value;
+                    if (!targetUrl) throw new Error("No URL provided for navigation.");
+                    console.log(`[TestimExecutor] Navigating to: ${targetUrl}`);
+                    await this.page.goto(targetUrl, { waitUntil: "networkidle", timeout: 30000 });
+                    return; // Done
+                }
+
+                if (step.action === "wait") {
+                    const ms = parseInt(step.value || "1000");
+                    await this.page.waitForTimeout(ms);
+                    return; // Done
+                }
+
+                if (!step.selector && !step.selectors) {
+                    console.warn(`[TestimExecutor] Step missing selector info. Skipping. Action: ${step.action}`);
+                    return;
+                }
+
+                // Safe locator resolution iteration
+                const { locator, strategyUsed } = await this.resolveSmartLocator(step, baseTimeout / 2);
+                if (!locator) throw new Error(`Could not resolve element for step ${step.step} using any strategy.`);
+
+                // Step 2: Ensure actionable state
+                await locator.waitFor({ state: 'visible', timeout: 5000 });
+                if (["click", "fill", "type", "select"].includes(step.action)) {
+                    // It will throw if it is disabled, catching into retry loop
+                    const isEnabled = await locator.isEnabled();
+                    if (!isEnabled) throw new Error("Element is disabled.");
+                }
+
+                await this.highlightElement(locator);
+                await locator.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => {});
+
+                // Step 3: Action Execution
+                if (step.action === "click") {
+                     // Trial click bypasses overlays checking
+                     try {
+                         await locator.click({ timeout: 5000, trial: true });
+                         await locator.click({ timeout: 5000 });
+                     } catch(e) {
+                         console.warn("[TestimExecutor] Normal click blocked by overlay. Running force click.");
+                         await locator.click({ force: true, timeout: 5000 });
+                     }
+                } else if (step.action === "fill" || step.action === "type") {
+                     await locator.fill(step.value || "", { timeout: 5000 });
+                } else if (step.action === "select") {
+                     await locator.selectOption(step.value || "", { timeout: 5000 });
+                } else if (step.action === "press") {
+                     await locator.press(step.value || "Enter", { timeout: 5000 });
+                }
+
+                return; // Success! Exit the retry loop.
+            } catch (err: any) {
+                console.error(`[TestimExecutor] Error in attempt ${attempt}:`, err.message);
+                if (attempt === this.maxRetries) {
+                    throw err; // Bubble up final failure
+                }
             }
         }
     }
-    return { status: "FAIL", error: "Maximum retries reached" };
+
+    public async runFlowSteps(steps: FlowStep[], targetUrl: string): Promise<RunResult> {
+        const stepResults: StepResult[] = [];
+        let failedStep = "";
+        const runStart = Date.now();
+        
+        // Initial setup flow
+        if (steps.length > 0 && steps[0].action !== "navigate" && targetUrl) {
+            console.log(`[TestimExecutor] Performing initial navigation to ${targetUrl}`);
+            await this.page.goto(targetUrl, { waitUntil: "networkidle", timeout: 30000 }).catch(e => console.warn(e));
+        }
+
+        for (const step of steps) {
+            console.log(`\n--- [TestimExecutor] Executing step ${step.step}: ${step.action} ---`);
+            const stepStart = Date.now();
+            let status: "PASS" | "FAIL" = "PASS";
+            let error = "";
+
+            await this.page.waitForTimeout(150); // Small intelligent delay between steps
+
+            try {
+                await this.safeExecute(step);
+            } catch (err: any) {
+                status = "FAIL";
+                error = err.message || "Failed after retries";
+            }
+
+            const label = step.label || `${step.action} ${step.url || ""}`.trim();
+            stepResults.push({ step: step.step, label, action: step.action, status, durationMs: Date.now() - stepStart, error });
+
+            if (status === "FAIL") {
+                failedStep = label;
+                break; // Stop execution on failure
+            }
+        }
+
+        let screenshot = "";
+        try { screenshot = (await this.page.screenshot({ fullPage: false })).toString("base64"); } catch (_) {}
+
+        const failCount = stepResults.filter((s) => s.status === "FAIL").length;
+        let overallStatus: "PASS" | "FAIL" | "PARTIAL" = "PASS";
+        if (failCount > 0) {
+            overallStatus = (stepResults.length < steps.length) ? "PARTIAL" : "FAIL";
+        }
+
+        return {
+            stepResults,
+            consoleLogs: [], // Passed from outside
+            networkFailures: [], // Passed from outside
+            overallStatus,
+            totalDurationMs: Date.now() - runStart,
+            failedStep,
+            screenshot,
+        };
+    }
 }
 
-export async function runFlow(
-    steps: FlowStep[],
-    targetUrl: string
-): Promise<RunResult> {
-    console.log(`[FlowRunner] Starting flow execution: ${steps.length} steps`);
+export async function runFlow(steps: FlowStep[], targetUrl: string): Promise<RunResult> {
+    console.log(`[FlowRunner] Booting Testim-style Executor Engine...`);
     const browser = await chromium.launch({ 
         headless: true,
-        args: ["--ignore-certificate-errors", "--ignore-ssl-errors"]
+        args: [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--ignore-certificate-errors",
+            "--ignore-ssl-errors"
+        ]
     });
     
     const context = await browser.newContext({
@@ -256,78 +284,15 @@ export async function runFlow(
     const page = await context.newPage();
     const { consoleLogs, networkFailures } = attachErrorMonitor(page);
 
-    const stepResults: StepResult[] = [];
-    let failedStep = "";
-    const runStart = Date.now();
+    const executor = new TestimExecutor(page);
+    const result = await executor.runFlowSteps(steps, targetUrl);
 
-    // Initial navigation if needed
-    const firstIsNav = steps.length > 0 && (steps[0].action === "navigate");
-    if (!firstIsNav && targetUrl) {
-        console.log(`[FlowRunner] Performing initial navigation to ${targetUrl}`);
-        try {
-            await page.goto(targetUrl, {
-                waitUntil: "networkidle",
-                timeout: 30000,
-            });
-        } catch (e: any) {
-            console.warn(`[FlowRunner] Initial navigation warning:`, e.message);
-        }
-    }
-
-    for (const step of steps) {
-        const stepStart = Date.now();
-        console.log(`[FlowRunner] Executing step ${step.step}: ${step.action} ${step.selector || ""}`);
-        
-        // Small delay between steps for stability
-        await page.waitForTimeout(200);
-        
-        const result = await executeStepWithRetry(page, step);
-
-        const label = step.label || `${step.action} ${step.selector || step.url || ""}`.trim();
-        stepResults.push({
-            step: step.step,
-            label,
-            action: step.action,
-            status: result.status,
-            durationMs: Date.now() - stepStart,
-            error: result.error,
-        });
-
-        if (result.status === "FAIL") {
-            if (!failedStep) failedStep = label;
-            // Stop execution on failure
-            break;
-        }
-    }
-
-    const totalDurationMs = Date.now() - runStart;
-
-    // Final screenshot
-    let screenshot = "";
-    try {
-        const buf = await page.screenshot({ fullPage: false });
-        screenshot = buf.toString("base64");
-    } catch (_) {}
+    // Patch on monitors
+    result.consoleLogs = consoleLogs;
+    result.networkFailures = networkFailures;
 
     await browser.close();
-
-    const failCount = stepResults.filter((s) => s.status === "FAIL").length;
-    const overallStatus: "PASS" | "FAIL" | "PARTIAL" =
-        failCount === 0
-            ? "PASS"
-            : (stepResults.length > 0 && stepResults[stepResults.length-1].status === "FAIL" && stepResults.length < steps.length) 
-                ? "PARTIAL" // stopped early
-                : "FAIL";
-
-    console.log(`[FlowRunner] Flow finished with status: ${overallStatus}`);
-
-    return {
-        stepResults,
-        consoleLogs,
-        networkFailures,
-        overallStatus,
-        totalDurationMs,
-        failedStep,
-        screenshot,
-    };
+    console.log(`[FlowRunner] Executor finished with status: ${result.overallStatus}`);
+    
+    return result;
 }

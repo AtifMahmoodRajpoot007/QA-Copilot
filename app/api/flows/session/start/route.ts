@@ -10,88 +10,105 @@ export const maxDuration = 60;
  * Injected into the page via CDP.
  */
 const SELECTOR_GENERATOR = `
-function getSelectors(el) {
-    if (!el) return { css: null };
-    
-    let selectors = {};
-    
-    // 1. Primary CSS
-    function getCss(el) {
-        if (el.getAttribute('data-testid')) return '[data-testid="' + el.getAttribute('data-testid') + '"]';
-        if (el.getAttribute('data-test-id')) return '[data-test-id="' + el.getAttribute('data-test-id') + '"]';
-        if (el.id && !el.id.includes('radix-') && !el.id.match(/[0-9]{3,}/)) {
+class SmartRecorder {
+    static isDynamicID(id) {
+        if (!id) return true;
+        // Strip out likely dynamic hashes or numbers
+        if (/[0-9]{3,}/.test(id)) return true;
+        if (/radix|headlessui|mantine|chakra/.test(id)) return true;
+        if (/^[:\\\\-]/.test(id)) return true;
+        return false;
+    }
+
+    static getCssSafeDescendants(el) {
+        let css = '';
+        if (el.getAttribute('data-testid')) {
+            return '[data-testid="' + el.getAttribute('data-testid') + '"]';
+        }
+        if (el.getAttribute('data-test-id')) {
+            return '[data-test-id="' + el.getAttribute('data-test-id') + '"]';
+        }
+        if (el.id && !this.isDynamicID(el.id)) {
             try { return '#' + CSS.escape(el.id); } catch(e) { return '#' + el.id; }
         }
-        if (el.getAttribute('name')) return el.tagName.toLowerCase() + '[name="' + el.getAttribute('name') + '"]';
-        return null; // fallback will be computed
-    }
-    
-    let primaryCss = getCss(el);
-    if (!primaryCss) {
-        if (el.className && typeof el.className === 'string' && el.className.trim()) {
-            const cls = el.className.trim().split(/\\s+/).slice(0, 2).join('.');
-            const tag = el.tagName.toLowerCase();
-            const candidates = document.querySelectorAll(tag + '.' + cls.replace(/\\s+/g, '.'));
-            if (candidates.length === 1) primaryCss = tag + '.' + cls.replace(/\\s+/g, '.');
+        if (el.getAttribute('name')) {
+            return el.tagName.toLowerCase() + '[name="' + el.getAttribute('name') + '"]';
         }
-    }
-    if (!primaryCss && el.parentElement) {
-        const parent = el.parentElement;
-        const children = Array.from(parent.children);
-        const idx = children.indexOf(el) + 1;
-        const tag = el.tagName.toLowerCase();
         
-        let pCss = getCss(parent);
-        if (pCss) {
-            primaryCss = pCss + ' > ' + tag + ':nth-child(' + idx + ')';
-        } else {
-            primaryCss = tag + ':nth-child(' + idx + ')';
-        }
-    }
-    selectors.css = primaryCss || el.tagName.toLowerCase();
-    
-    // 2. Text
-    let text = el.textContent || el.innerText;
-    if (text && text.trim().length > 0 && text.trim().length < 50) {
-        selectors.text = text.trim();
-    } else if (el.value && typeof el.value === 'string') {
-        selectors.text = el.value.trim();
-    }
-    
-    // 3. Placeholder
-    if (el.getAttribute('placeholder')) {
-        selectors.placeholder = el.getAttribute('placeholder');
-    }
-    
-    // 4. Role
-    const role = el.getAttribute('role');
-    if (role) {
-        selectors.role = role;
-    } else if (el.tagName === 'BUTTON' || (el.tagName === 'INPUT' && (el.type === 'button' || el.type === 'submit'))) {
-        selectors.role = 'button';
-    } else if (el.tagName === 'A') {
-        selectors.role = 'link';
-    }
-    
-    // 5. XPath
-    try {
-        function getXPath(element) {
-            if (element.id !== '') return 'id("' + element.id + '")';
-            if (element === document.body) return element.tagName;
-
-            var ix = 0;
-            var siblings = element.parentNode ? element.parentNode.childNodes : [];
-            for (var i = 0; i < siblings.length; i++) {
-                var sibling = siblings[i];
-                if (sibling === element) return getXPath(element.parentNode) + '/' + element.tagName + '[' + (ix + 1) + ']';
-                if (sibling.nodeType === 1 && sibling.tagName === element.tagName) ix++;
+        // Use single reliable classes
+        if (el.className && typeof el.className === 'string') {
+            const safeClasses = el.className.split(/\\s+/).filter(c => !this.isDynamicID(c) && !c.includes('hover') && !c.includes('active') && !c.includes('focus') && c.length > 2);
+            if (safeClasses.length > 0) {
+                return el.tagName.toLowerCase() + '.' + safeClasses.slice(0,2).join('.');
             }
         }
-        selectors.xpath = getXPath(el);
-    } catch(e) {}
-    
-    return selectors;
+        return el.tagName.toLowerCase();
+    }
+
+    static getSelectors(el) {
+        if (!el) return { css: null };
+        let selectors = {
+            css: null,
+            text: null,
+            placeholder: null,
+            role: null,
+            xpath: null
+        };
+
+        // 1. Primary CSS without nth-child
+        let targetCss = this.getCssSafeDescendants(el);
+        if (el.parentElement && el.tagName.toLowerCase() !== 'body' && el.tagName.toLowerCase() !== 'html') {
+            const parentCss = this.getCssSafeDescendants(el.parentElement);
+            // Only combine if tag alone is too generic
+            if (['div', 'span', 'p'].includes(el.tagName.toLowerCase())) {
+                 selectors.css = parentCss + ' > ' + targetCss;
+            } else {
+                 selectors.css = targetCss;
+            }
+        } else {
+             selectors.css = targetCss;
+        }
+
+        // 2. Text Content (Exact)
+        let text = el.textContent || el.innerText;
+        if (text && text.trim().length > 0 && text.trim().length < 60 && !text.includes('\\n')) {
+            selectors.text = text.trim();
+        } else if (el.value && typeof el.value === 'string') {
+            selectors.text = el.value.trim();
+        }
+
+        // 3. Placeholder
+        selectors.placeholder = el.getAttribute('placeholder') || null;
+
+        // 4. Role
+        let role = el.getAttribute('role');
+        if (!role) {
+            if (el.tagName === 'BUTTON' || (el.tagName === 'INPUT' && ['submit', 'button'].includes(el.type))) role = 'button';
+            if (el.tagName === 'A') role = 'link';
+            if (el.tagName === 'INPUT' && el.type === 'checkbox') role = 'checkbox';
+        }
+        selectors.role = role || null;
+
+        // 5. XPath (Stable fallback)
+        try {
+            function buildXPath(element) {
+                if (element.id && !SmartRecorder.isDynamicID(element.id)) return 'id("' + element.id + '")';
+                if (element === document.body) return element.tagName.toLowerCase();
+                let idx = 1;
+                let siblings = element.parentNode ? element.parentNode.childNodes : [];
+                for (let i = 0; i < siblings.length; i++) {
+                    let sibling = siblings[i];
+                    if (sibling === element) return buildXPath(element.parentNode) + '/' + element.tagName.toLowerCase() + '[' + idx + ']';
+                    if (sibling.nodeType === 1 && sibling.tagName === element.tagName) idx++;
+                }
+            }
+            selectors.xpath = buildXPath(el);
+        } catch(e) {}
+
+        return selectors;
+    }
 }
+window.SmartRecorder = SmartRecorder;
 `;
 
 const INJECT_SCRIPT = `
@@ -108,7 +125,7 @@ const INJECT_SCRIPT = `
         // Ignore clicks on our injected stop button
         if (el.id === '__qa_stop_btn' || el.closest('#__qa_stop_btn') || el.closest('#__qa_stop_container')) return;
         
-        var selectors = getSelectors(el);
+        var selectors = window.SmartRecorder.getSelectors(el);
         var label = (el.textContent || el.value || el.placeholder || el.getAttribute('aria-label') || el.tagName).trim().substring(0, 60);
         window.__qaRecordedEvents.push({
             type: 'click',
@@ -124,7 +141,7 @@ const INJECT_SCRIPT = `
     document.addEventListener('input', function(e) {
         var el = e.target;
         if (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') return;
-        var selectors = getSelectors(el);
+        var selectors = window.SmartRecorder.getSelectors(el);
         var label = (el.placeholder || el.name || el.id || 'Input').substring(0, 40);
         // debounce: update or push
         var events = window.__qaRecordedEvents;
@@ -150,7 +167,7 @@ const INJECT_SCRIPT = `
     document.addEventListener('change', function(e) {
         var el = e.target;
         if (el.tagName !== 'SELECT') return;
-        var selectors = getSelectors(el);
+        var selectors = window.SmartRecorder.getSelectors(el);
         window.__qaRecordedEvents.push({
             type: 'select',
             selector: selectors.css,
@@ -262,9 +279,16 @@ export async function POST(req: NextRequest) {
 
         const sessionId = generateSessionId();
         const browser = await chromium.launch({
-            headless: false,
-            args: ["--ignore-certificate-errors", "--ignore-ssl-errors", "--start-maximized"]
-        }); // visible browser
+            headless: true,
+            args: [
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--ignore-certificate-errors", 
+                "--ignore-ssl-errors"
+            ]
+        }); // headless for Linux/CI compatibility
         const context = await browser.newContext({
             ignoreHTTPSErrors: true,
             userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",

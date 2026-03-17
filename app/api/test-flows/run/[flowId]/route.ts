@@ -25,8 +25,15 @@ export async function POST(
         const sessionId = generateSessionId();
 
         const browser = await chromium.launch({ 
-            headless: false,
-            args: ["--ignore-certificate-errors", "--ignore-ssl-errors", "--start-maximized"]
+            headless: true,
+            args: [
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--ignore-certificate-errors", 
+                "--ignore-ssl-errors"
+            ]
         });
         const context = await browser.newContext({
             ignoreHTTPSErrors: true,

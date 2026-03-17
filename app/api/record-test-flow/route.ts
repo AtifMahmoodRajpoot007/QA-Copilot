@@ -44,7 +44,15 @@ export async function POST(req: NextRequest) {
         // Heuristic: If we are just "testing" a step or starting a session
         // Since we are stateless in a Next.js API route, we execute all steps to get to the current state
         if (action === "execute") {
-            const browser = await chromium.launch({ headless: true });
+            const browser = await chromium.launch({ 
+                headless: true,
+                args: [
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu"
+                ]
+            });
             const page = await browser.newPage();
 
             let screenshot = "";
