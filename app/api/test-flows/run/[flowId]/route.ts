@@ -92,25 +92,74 @@ export async function POST(
 
                     const label = step.label || (step.action + " " + (step.selector || ""));
                     await updatePIPOverlay(page, "Step " + step.step + ": " + step.action, label);
-                    
-                    if (step.selector) {
-                        // Smart wait for element rather than simple timeout
-                        await page.waitForSelector(step.selector, { state: 'visible', timeout: 5000 }).catch(() => {});
-                        await highlightElement(page, step.selector);
-                    }
 
                     const stepStart = Date.now();
                     let stepStatus: "PASS" | "FAIL" = "PASS";
                     let stepError = "";
 
                     try {
-                        switch (step.action) {
-                            case "navigate": await page.goto(step.url || step.value, { waitUntil: "commit", timeout: 15000 }).catch(() => {}); break;
-                            case "click": await page.click(step.selector!, { timeout: 5000 }); break;
+                        let finalLocator = null;
+                        
+                        // Smart Locator Resolution (Role -> Placeholder -> Text -> CSS)
+                        if (step.action !== "navigate" && step.action !== "wait") {
+                            const locatorsToTry = [];
+                            if (step.selectors) {
+                                if (step.selectors.role) {
+                                    locatorsToTry.push(page.getByRole(step.selectors.role as any, { name: step.selectors.text ? new RegExp(step.selectors.text, 'i') : undefined }));
+                                }
+                                if (step.selectors.placeholder) locatorsToTry.push(page.getByPlaceholder(new RegExp(step.selectors.placeholder, 'i')));
+                                if (step.selectors.text) locatorsToTry.push(page.getByText(step.selectors.text, { exact: false }));
+                            }
+                            if (step.selector) locatorsToTry.push(page.locator(step.selector));
+
+                            for (const loc of locatorsToTry) {
+                                try {
+                                    if (await loc.first().count() > 0) {
+                                        await loc.first().waitFor({ state: 'attached', timeout: 2000 });
+                                        finalLocator = loc.first();
+                                        break;
+                                    }
+                                } catch (e) { }
+                            }
+
+                            if (!finalLocator && step.selector) {
+                                finalLocator = page.locator(step.selector).first();
+                            }
+
+                            if (finalLocator) {
+                                await finalLocator.waitFor({ state: 'visible', timeout: 8000 });
+                                await highlightElement(page, step.selector || "");
+                            }
+                        }
+
+                        // Smart Action Conversion
+                        let finalAction = step.action;
+                        if (finalAction === "click" && step.value && (step.label?.toLowerCase().includes("input") || step.label?.toLowerCase().includes("fill") || step.selectors?.role === 'textbox' || step.label?.includes("@"))) {
+                            // Automatically convert clicks with values to fill natively
+                            finalAction = "fill";
+                        }
+
+                        switch (finalAction) {
+                            case "navigate": 
+                                await page.goto(step.url || step.value, { waitUntil: "commit", timeout: 15000 }).catch(() => {});
+                                await page.waitForLoadState('domcontentloaded');
+                                break;
+                            case "click": 
+                                if (finalLocator) await finalLocator.click({ timeout: 5000 }); 
+                                else await page.click(step.selector!, { timeout: 5000 });
+                                break;
                             case "fill": 
-                            case "type": await page.fill(step.selector!, step.value || "", { timeout: 5000 }); break;
-                            case "select": await page.selectOption(step.selector!, step.value || "", { timeout: 5000 }); break;
-                            case "wait": await page.waitForTimeout(parseInt(step.value || "1000")); break;
+                            case "type": 
+                                if (finalLocator) await finalLocator.fill(step.value || "", { timeout: 5000 });
+                                else await page.fill(step.selector!, step.value || "", { timeout: 5000 });
+                                break;
+                            case "select": 
+                                if (finalLocator) await finalLocator.selectOption(step.value || "", { timeout: 5000 });
+                                else await page.selectOption(step.selector!, step.value || "", { timeout: 5000 });
+                                break;
+                            case "wait": 
+                                await page.waitForTimeout(parseInt(step.value || "1000")); 
+                                break;
                         }
                     } catch (e: any) {
                         stepStatus = "FAIL";
