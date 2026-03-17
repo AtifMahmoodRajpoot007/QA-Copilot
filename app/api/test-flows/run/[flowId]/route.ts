@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chromium } from "playwright";
+import { chromium } from "playwright-core";
 import { launchBrowser } from "@/lib/playwright";
 import connectToDatabase from "@/lib/mongodb";
 import TestFlow from "@/models/TestFlow";
@@ -25,7 +25,7 @@ export async function POST(
 
         const sessionId = generateSessionId();
 
-        const browser = await launchBrowser({ headless: true });
+        const browser = await launchBrowser();
         const context = await browser.newContext({
             ignoreHTTPSErrors: true,
             viewport: null, 

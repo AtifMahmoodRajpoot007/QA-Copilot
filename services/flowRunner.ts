@@ -4,7 +4,7 @@
  * Used by /api/flows/run and any future scheduled runners.
  */
 
-import { chromium } from "playwright";
+import { chromium } from "playwright-core";
 import { launchBrowser } from "@/lib/playwright";
 import { attachErrorMonitor } from "./errorMonitor";
 
@@ -90,7 +90,7 @@ export async function runFlow(
     steps: FlowStep[],
     targetUrl: string
 ): Promise<RunResult> {
-    const browser = await launchBrowser({ headless: true });
+    const browser = await launchBrowser();
     const context = await browser.newContext({
         ignoreHTTPSErrors: true,
         userAgent:

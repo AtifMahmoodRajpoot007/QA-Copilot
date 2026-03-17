@@ -3,7 +3,7 @@
  * Uses a global variable to persist across hot reloads in dev mode.
  */
 
-import { Browser, BrowserContext, Page } from "playwright";
+import { Browser, BrowserContext, Page } from "playwright-core";
 import { FlowStep } from "@/types";
 
 export interface RecordingSession {

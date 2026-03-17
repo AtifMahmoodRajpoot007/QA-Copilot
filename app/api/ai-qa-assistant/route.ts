@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chromium } from "playwright";
 import { launchBrowser } from "@/lib/playwright";
 import { callLLM, callLLMWithImage } from "@/lib/gemini";
 import { AI_TESTING_AGENT_PROMPT } from "@/lib/prompts";
@@ -63,7 +62,7 @@ export async function POST(req: NextRequest) {
         }
 
         const sessionId = Math.random().toString(36).substring(7);
-        const browser = await launchBrowser({ headless: true });
+        const browser = await launchBrowser();
         
         const context = await browser.newContext({ viewport: null });
         

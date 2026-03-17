@@ -4,7 +4,7 @@
  * Returns collected arrays that fill in as the page runs.
  */
 
-import type { Page } from "playwright";
+import type { Page } from "playwright-core";
 
 export interface ErrorCollector {
     consoleLogs: string[];

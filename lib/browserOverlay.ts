@@ -3,7 +3,7 @@
  * Utilities for injecting visual feedback into the browser during automation.
  */
 
-import { Page } from "playwright";
+import { Page } from "playwright-core";
 
 /**
  * Injects a Picture-in-Picture (PIP) overlay into the page.
