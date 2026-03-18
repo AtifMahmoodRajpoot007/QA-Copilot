@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chromium } from "playwright";
+import { launchBrowser } from "@/lib/browserLauncher";
 import connectToDatabase from "@/lib/mongodb";
 import TestFlow from "@/models/TestFlow";
 import FlowRun from "@/models/FlowRun";
@@ -24,17 +24,8 @@ export async function POST(
 
         const sessionId = generateSessionId();
 
-        const browser = await chromium.launch({ 
-            headless: false,
-            args: [
-                "--start-maximized",
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--ignore-certificate-errors", 
-                "--ignore-ssl-errors"
-            ]
-        });
+        const { browser, isHeaded } = await launchBrowser("execution");
+        console.log(`[Execution] Browser launched (headed: ${isHeaded})`);
         const context = await browser.newContext({
             ignoreHTTPSErrors: true,
             viewport: null, 

@@ -460,24 +460,24 @@ export default function TestFlowsPage() {
                         {liveRunStatus !== "RUNNING" && (
                             <div className="animate-slide-up" style={{ marginTop: "12px" }}>
                                 {liveRunStatus === "PASS" ? (
-                                    <div style={{ background: "rgba(240, 246, 255, 1)", borderRadius: "12px", padding: "24px", display: "flex", alignItems: "center", gap: "20px", position: "relative", border: "1px solid rgba(219, 234, 254, 1)", boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)" }}>
-                                        <div style={{ width: "60px", height: "60px", borderRadius: "50%", background: "white", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.05)" }}>
-                                            <div style={{ fontSize: "30px" }}>👌</div>
+                                    <div style={{ background: "rgba(240, 246, 255, 1)", borderRadius: "10px", padding: "16px", display: "flex", alignItems: "center", gap: "14px", position: "relative", border: "1px solid rgba(219, 234, 254, 1)", boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.05)" }}>
+                                        <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: "white", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 4px -1px rgba(0, 0, 0, 0.05)" }}>
+                                            <div style={{ fontSize: "20px" }}>👌</div>
                                         </div>
                                         <div style={{ flex: 1 }}>
-                                            <div style={{ fontWeight: "800", fontSize: "1.1rem", color: "#1e293b", letterSpacing: "0.05em", marginBottom: "4px" }}>TEST COMPLETED SUCCESSFULLY</div>
+                                            <div style={{ fontWeight: "800", fontSize: "0.95rem", color: "#1e293b", letterSpacing: "0.05em", marginBottom: "2px" }}>TEST COMPLETED SUCCESSFULLY</div>
                                             <button 
                                                 onClick={() => { setLiveRunActive(false); setRunBanner(null); setTab("flows"); fetchFlows(); }} 
-                                                style={{ background: "none", border: "none", padding: 0, color: "#334155", textDecoration: "underline", fontSize: "0.95rem", fontWeight: "600", cursor: "pointer" }}
+                                                style={{ background: "none", border: "none", padding: 0, color: "#334155", textDecoration: "underline", fontSize: "0.85rem", fontWeight: "600", cursor: "pointer" }}
                                             >
                                                 Go back to the tests
                                             </button>
                                         </div>
                                         <button 
                                             onClick={() => { setLiveRunActive(false); setRunBanner(null); }} 
-                                            style={{ position: "absolute", top: "12px", right: "12px", background: "none", border: "none", cursor: "pointer", color: "#64748b" }}
+                                            style={{ position: "absolute", top: "10px", right: "10px", background: "none", border: "none", cursor: "pointer", color: "#64748b" }}
                                         >
-                                            <X size={18} />
+                                            <X size={16} />
                                         </button>
                                     </div>
                                 ) : (

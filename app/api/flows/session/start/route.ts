@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chromium } from "playwright";
+import { launchBrowser } from "@/lib/browserLauncher";
 import { sessionStore, generateSessionId, cleanOldSessions, RecordingSession } from "@/lib/sessionStore";
 import { FlowStep } from "@/types";
 
@@ -278,17 +278,8 @@ export async function POST(req: NextRequest) {
         if (!url?.trim()) return NextResponse.json({ error: "URL is required" }, { status: 400 });
 
         const sessionId = generateSessionId();
-        const browser = await chromium.launch({
-            headless: false,
-            args: [
-                "--start-maximized",
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--ignore-certificate-errors", 
-                "--ignore-ssl-errors"
-            ]
-        }); // visible browser for recording
+        const { browser, isHeaded } = await launchBrowser("recording");
+        console.log(`[Recording] Browser launched (headed: ${isHeaded})`);
         const context = await browser.newContext({
             ignoreHTTPSErrors: true,
             userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",

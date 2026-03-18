@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chromium } from "playwright";
+import { launchBrowser } from "@/lib/browserLauncher";
 import connectToDatabase from "@/lib/mongodb";
 import RegressionScript from "@/models/RegressionScript";
 
@@ -44,15 +44,7 @@ export async function POST(req: NextRequest) {
         // Heuristic: If we are just "testing" a step or starting a session
         // Since we are stateless in a Next.js API route, we execute all steps to get to the current state
         if (action === "execute") {
-            const browser = await chromium.launch({ 
-                headless: true,
-                args: [
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--disable-gpu"
-                ]
-            });
+            const { browser } = await launchBrowser("background");
             const page = await browser.newPage();
 
             let screenshot = "";

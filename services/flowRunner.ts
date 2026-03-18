@@ -4,7 +4,8 @@
  * Replaces the procedural runner with a robust, self-healing class architecture.
  */
 
-import { chromium, Page, Locator } from "playwright";
+import { Page, Locator } from "playwright";
+import { launchBrowser } from "@/lib/browserLauncher";
 import { attachErrorMonitor } from "./errorMonitor";
 
 export interface FlowStep {
@@ -263,17 +264,7 @@ class TestimExecutor {
 
 export async function runFlow(steps: FlowStep[], targetUrl: string): Promise<RunResult> {
     console.log(`[FlowRunner] Booting Testim-style Executor Engine...`);
-    const browser = await chromium.launch({ 
-        headless: true,
-        args: [
-            "--no-sandbox",
-            "--disable-setuid-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-gpu",
-            "--ignore-certificate-errors",
-            "--ignore-ssl-errors"
-        ]
-    });
+    const { browser } = await launchBrowser("background");
     
     const context = await browser.newContext({
         ignoreHTTPSErrors: true,

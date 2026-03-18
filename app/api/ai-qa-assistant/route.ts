@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chromium } from "playwright";
+import { launchBrowser } from "@/lib/browserLauncher";
 import { callLLM, callLLMWithImage } from "@/lib/gemini";
 import { AI_TESTING_AGENT_PROMPT } from "@/lib/prompts";
 import connectToDatabase from "@/lib/mongodb";
@@ -62,15 +62,7 @@ export async function POST(req: NextRequest) {
         }
 
         const sessionId = Math.random().toString(36).substring(7);
-        const browser = await chromium.launch({ 
-            headless: true, 
-            args: [
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu"
-            ] 
-        });
+        const { browser } = await launchBrowser("background");
         
         const context = await browser.newContext({ viewport: null });
         
