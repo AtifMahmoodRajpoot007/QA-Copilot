@@ -279,16 +279,16 @@ export async function POST(req: NextRequest) {
 
         const sessionId = generateSessionId();
         const browser = await chromium.launch({
-            headless: true,
+            headless: false,
             args: [
+                "--start-maximized",
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
-                "--disable-gpu",
                 "--ignore-certificate-errors", 
                 "--ignore-ssl-errors"
             ]
-        }); // headless for Linux/CI compatibility
+        }); // visible browser for recording
         const context = await browser.newContext({
             ignoreHTTPSErrors: true,
             userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",

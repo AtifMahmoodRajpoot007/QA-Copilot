@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  qa-copilot-headed:
+    build:
+      context: .
+      dockerfile: Dockerfile.headed
+    ports:
+      - "3002:3002"   # Your Next.js App
+      - "6080:6080"   # NoVNC Visual Browser Access
+    environment:
+      - NODE_ENV=production
+      - PORT=3002
+      # Add your backend API keys, DB URIs, etc. here
+      # - MONGODB_URI=...
+    volumes:
+      # Optional: sync the public directory if you save files dynamically
+      # - ./public:/app/public
+    shm_size: '2gb' # Critical to prevent Chrome crashes in Docker

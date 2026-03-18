@@ -1,0 +1,38 @@
+FROM mcr.microsoft.com/playwright:v1.42.0-jammy
+
+# Switch to root to install desktop environment dependencies
+USER root
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    xvfb \
+    x11vnc \
+    fluxbox \
+    novnc \
+    websockify \
+    supervisor \
+    && rm -rf /var/lib/apt/lists/*
+
+# Setup working directory
+WORKDIR /app
+
+# Copy application files
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
+
+# Build the Next.js app
+RUN npm run build
+
+# Setup Supervisor configuration to run the App, Xvfb, Window Manager, and VNC simultaneously
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+# Expose Next.js App (3002) and NoVNC Web Viewer (6080)
+EXPOSE 3002 6080
+
+# Configure default display
+ENV DISPLAY=:99
+ENV RESOLUTION=1920x1080x24
+
+# Start the supervisor daemon which runs everything
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

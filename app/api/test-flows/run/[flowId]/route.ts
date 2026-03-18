@@ -25,12 +25,12 @@ export async function POST(
         const sessionId = generateSessionId();
 
         const browser = await chromium.launch({ 
-            headless: true,
+            headless: false,
             args: [
+                "--start-maximized",
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
-                "--disable-gpu",
                 "--ignore-certificate-errors", 
                 "--ignore-ssl-errors"
             ]
