@@ -38,8 +38,21 @@ apt-get install -y --no-install-recommends \
     fonts-liberation \
     fonts-noto-color-emoji
 
-# 2. Install Playwright browsers
-echo "[2/5] Installing Playwright Chromium browser..."
+# 2. Ensure Node.js 18+ is available (Playwright requires it)
+echo "[2/5] Checking Node.js version..."
+NODE_VERSION=$(node -v 2>/dev/null | cut -d'.' -f1 | tr -d 'v' || echo "0")
+if [ "$NODE_VERSION" -lt 18 ]; then
+    echo "⚠️  Node.js v${NODE_VERSION} found — Playwright needs v18+. Installing Node.js 20..."
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - || true
+    apt-get install -y nodejs
+    echo "✅ Node.js $(node -v) installed."
+else
+    echo "✅ Node.js v${NODE_VERSION} — OK."
+fi
+
+# 3. Install Playwright Chromium browser
+echo "[3/6] Installing Playwright Chromium browser..."
+cd /home/shujaat/QA-Copilot
 npx -y playwright install chromium
 npx -y playwright install-deps chromium
 
