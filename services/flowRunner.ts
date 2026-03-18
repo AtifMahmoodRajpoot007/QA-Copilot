@@ -6,7 +6,10 @@
 
 import { Page, Locator } from "playwright";
 import { launchBrowser } from "@/lib/browserLauncher";
+import { createLogger } from "@/lib/logger";
 import { attachErrorMonitor } from "./errorMonitor";
+
+const log = createLogger("FlowRunner");
 
 export interface FlowStep {
     step: number;
@@ -263,7 +266,7 @@ class TestimExecutor {
 }
 
 export async function runFlow(steps: FlowStep[], targetUrl: string): Promise<RunResult> {
-    console.log(`[FlowRunner] Booting Testim-style Executor Engine...`);
+    log.info("Booting Testim-style Executor Engine", { targetUrl, steps: steps.length });
     const { browser } = await launchBrowser("background");
     
     const context = await browser.newContext({
@@ -283,7 +286,7 @@ export async function runFlow(steps: FlowStep[], targetUrl: string): Promise<Run
     result.networkFailures = networkFailures;
 
     await browser.close();
-    console.log(`[FlowRunner] Executor finished with status: ${result.overallStatus}`);
+    log.info("Executor finished", { status: result.overallStatus, steps: result.stepResults.length });
     
     return result;
 }

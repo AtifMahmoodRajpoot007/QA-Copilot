@@ -1,11 +1,14 @@
 import { chromium, type Browser, type LaunchOptions } from "playwright";
 import os from "os";
 import fs from "fs";
+import { createLogger } from "@/lib/logger";
 
 // ═══════════════════════════════════════════════════════════════════
 // Cross-Platform Browser Launcher for QA-Copilot
 // Automatically detects OS and configures Playwright accordingly.
 // ═══════════════════════════════════════════════════════════════════
+
+const log = createLogger("BrowserLauncher");
 
 const isWindows = os.platform() === "win32";
 const isLinux = os.platform() === "linux";
@@ -23,11 +26,11 @@ function findSystemChrome(): string | undefined {
     if (envPath) {
         try {
             if (fs.existsSync(envPath)) {
-                console.log(`[BrowserLauncher] Using CHROME_PATH from env: ${envPath}`);
+                log.info("Using CHROME_PATH from env", { path: envPath });
                 return envPath;
             }
         } catch { /* skip */ }
-        console.warn(`[BrowserLauncher] CHROME_PATH env set but file not found: ${envPath}`);
+        log.warn("CHROME_PATH env set but file not found", { path: envPath });
     }
 
     // 2. Auto-detect common system paths
@@ -48,14 +51,14 @@ function findSystemChrome(): string | undefined {
     for (const p of candidates) {
         try {
             if (p && fs.existsSync(p)) {
-                console.log(`[BrowserLauncher] Found system Chrome: ${p}`);
+                log.info("Found system Chrome", { path: p });
                 return p;
             }
         } catch { /* skip */ }
     }
 
-    console.log("[BrowserLauncher] No system Chrome found, using Playwright bundled Chromium.");
-    return undefined; // Playwright will use its own bundled Chromium
+    log.info("No system Chrome found, using Playwright bundled Chromium");
+    return undefined;
 }
 
 /**
@@ -74,32 +77,20 @@ export interface LaunchResult {
 
 /**
  * Launch a Playwright browser with cross-platform support.
- *
- * On Windows:
- *   - recording/execution → headed (headless: false) with system Chrome
- *   - background → headless with system Chrome
- *
- * On Linux:
- *   - If DISPLAY is available (Xvfb) → headed allowed for recording/execution
- *   - If no DISPLAY → always headless, regardless of mode
- *   - background → always headless
  */
 export async function launchBrowser(mode: LaunchMode = "background"): Promise<LaunchResult> {
     const systemChrome = findSystemChrome();
     const displayAvailable = hasDisplay();
 
-    // Determine if we should launch headed
     const wantsHeaded = mode === "recording" || mode === "execution";
     const canBeHeaded = isWindows || displayAvailable;
     const headless = !(wantsHeaded && canBeHeaded);
 
-    // Build launch arguments
     const args: string[] = [
         "--ignore-certificate-errors",
         "--ignore-ssl-errors",
     ];
 
-    // Linux stability flags
     if (isLinux) {
         args.push(
             "--no-sandbox",
@@ -109,40 +100,33 @@ export async function launchBrowser(mode: LaunchMode = "background"): Promise<La
         );
     }
 
-    // Add --start-maximized only in headed mode
     if (!headless) {
         args.push("--start-maximized");
     }
 
-    const launchOptions: LaunchOptions = {
-        headless,
-        args,
-    };
+    const launchOptions: LaunchOptions = { headless, args };
 
-    // Use system Chrome if found
     if (systemChrome) {
         launchOptions.executablePath = systemChrome;
     }
 
     const platform = `${os.platform()} (${os.arch()})`;
-    console.log(`[BrowserLauncher] Platform: ${platform}`);
-    console.log(`[BrowserLauncher] Mode: ${mode} | Headed: ${!headless} | Display: ${displayAvailable}`);
-    if (systemChrome) console.log(`[BrowserLauncher] Executable: ${systemChrome}`);
+    log.info("Launching browser", { platform, mode, headed: !headless, display: displayAvailable, executable: systemChrome || "playwright-bundled" });
 
     try {
         const browser = await chromium.launch(launchOptions);
-        console.log(`[BrowserLauncher] ✅ Browser launched successfully.`);
+        log.info("Browser launched successfully", { mode, headed: !headless });
         return { browser, isHeaded: !headless, platform };
     } catch (error: any) {
-        // If headed launch failed on Linux (no X server), auto-fallback to headless
         if (!headless && isLinux && error.message?.includes("XServer")) {
-            console.warn(`[BrowserLauncher] ⚠️ Headed launch failed (no X server), falling back to headless...`);
+            log.warn("Headed launch failed (no X server), falling back to headless", { error: error.message });
             launchOptions.headless = true;
             launchOptions.args = launchOptions.args?.filter(a => a !== "--start-maximized");
             const browser = await chromium.launch(launchOptions);
-            console.log(`[BrowserLauncher] ✅ Browser launched in headless fallback mode.`);
+            log.info("Browser launched in headless fallback mode");
             return { browser, isHeaded: false, platform };
         }
+        log.error("Browser launch failed", { error: error.message, mode, platform });
         throw error;
     }
 }

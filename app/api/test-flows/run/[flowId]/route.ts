@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { launchBrowser } from "@/lib/browserLauncher";
+import { createLogger } from "@/lib/logger";
 import connectToDatabase from "@/lib/mongodb";
 import TestFlow from "@/models/TestFlow";
 import FlowRun from "@/models/FlowRun";
@@ -24,8 +25,9 @@ export async function POST(
 
         const sessionId = generateSessionId();
 
+        const log = createLogger("Execution");
         const { browser, isHeaded } = await launchBrowser("execution");
-        console.log(`[Execution] Browser launched (headed: ${isHeaded})`);
+        log.info("Browser launched", { headed: isHeaded });
         const context = await browser.newContext({
             ignoreHTTPSErrors: true,
             viewport: null, 

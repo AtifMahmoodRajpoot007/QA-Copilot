@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { launchBrowser } from "@/lib/browserLauncher";
+import { createLogger } from "@/lib/logger";
 import connectToDatabase from "@/lib/mongodb";
 import SmokeTestReport from "@/models/SmokeTestReport";
 
@@ -195,7 +196,7 @@ export async function POST(req: NextRequest) {
                     }
                 }
             } catch (error) {
-                console.error("Login test execution failed:", error);
+                createLogger("SmokeTest").error("Login test execution failed", { error: String(error) });
             }
         }
 
@@ -218,7 +219,7 @@ export async function POST(req: NextRequest) {
         const savedReport = await SmokeTestReport.create(reportData);
         return NextResponse.json(savedReport);
     } catch (error: any) {
-        console.error("[api/smoke-test]", error);
+        createLogger("SmokeTest").error("Smoke test failed", { error: String(error) });
         return NextResponse.json({ error: error.message || "Failed to run smoke test" }, { status: 500 });
     }
 }

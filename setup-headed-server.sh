@@ -15,9 +15,9 @@ echo "╔═══════════════════════�
 echo "║  QA-Copilot: Headed Chromium Server Setup            ║"
 echo "╚══════════════════════════════════════════════════════╝"
 
-# 1. Install core dependencies
+# 1. Install core dependencies (ignore errors from broken third-party repos)
 echo "[1/5] Installing Xvfb, Fluxbox, and display utilities..."
-apt-get update -qq
+apt-get update -qq || echo "⚠️  Some repos had errors (non-critical, continuing...)"
 apt-get install -y --no-install-recommends \
     xvfb \
     fluxbox \

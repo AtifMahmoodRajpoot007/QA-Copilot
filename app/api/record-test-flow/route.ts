@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { launchBrowser } from "@/lib/browserLauncher";
+import { createLogger } from "@/lib/logger";
 import connectToDatabase from "@/lib/mongodb";
 import RegressionScript from "@/models/RegressionScript";
 
@@ -74,7 +75,7 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({ error: "Invalid action" }, { status: 400 });
     } catch (error: any) {
-        console.error("[api/record-test-flow]", error);
+        createLogger("RecordTestFlow").error("Record test flow failed", { error: String(error) });
         return NextResponse.json({ error: error.message || "Action failed" }, { status: 500 });
     }
 }
