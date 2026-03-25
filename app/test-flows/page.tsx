@@ -212,26 +212,32 @@ export default function TestFlowsPage() {
                 const pr = await fetch(`/api/flows/session/${d.sessionId}`);
                 if (pr.ok) {
                     const pd = await pr.json();
-                    if (pd.runStatus !== "RUNNING") {
-                        clearInterval(pollingRef.current!);
-                        setRunBanner({
-                            flowName: flow.name,
-                            status: pd.runStatus,
-                            msg: pd.runStatus === "PASS" ? "Test completed successfully." : "Test failed. See results for details.",
-                            consoleLogs: pd.consoleLogs,
-                            networkFailures: pd.networkFailures
-                        });
-                        setRunningId(null);
-                        setTab("results");
-                        fetchRuns();
-                    }
                     setLiveResults(pd.stepResults || []);
                     setLiveRunStatus(pd.runStatus || "RUNNING");
                     setLiveScreenshot(pd.latestScreenshot || null);
+                    if (pd.runStatus !== "RUNNING") {
+                        clearInterval(pollingRef.current!);
+                        // Show the PASS/FAIL result briefly, then auto-transition to Executions tab
+                        setTimeout(() => {
+                            setLiveRunActive(false);
+                            setRunBanner({
+                                flowName: flow.name,
+                                status: pd.runStatus,
+                                msg: pd.runStatus === "PASS" ? "Test completed successfully." : "Test failed. See results for details.",
+                                consoleLogs: pd.consoleLogs,
+                                networkFailures: pd.networkFailures
+                            });
+                            setRunningId(null);
+                            setTab("results");
+                            fetchRuns();
+                        }, 1500);
+                    }
                 } else {
-                    // Browser closed
+                    // Session ended (browser closed) — auto-navigate to results
                     clearInterval(pollingRef.current!);
+                    setLiveRunActive(false);
                     setRunningId(null);
+                    setTab("results");
                     fetchRuns();
                 }
             }, 1000);
@@ -466,12 +472,7 @@ export default function TestFlowsPage() {
                                         </div>
                                         <div style={{ flex: 1 }}>
                                             <div style={{ fontWeight: "800", fontSize: "0.95rem", color: "#1e293b", letterSpacing: "0.05em", marginBottom: "2px" }}>TEST COMPLETED SUCCESSFULLY</div>
-                                            <button 
-                                                onClick={() => { setLiveRunActive(false); setRunBanner(null); setTab("flows"); fetchFlows(); }} 
-                                                style={{ background: "none", border: "none", padding: 0, color: "#334155", textDecoration: "underline", fontSize: "0.85rem", fontWeight: "600", cursor: "pointer" }}
-                                            >
-                                                Go back to the tests
-                                            </button>
+                                            <div style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: "600" }}>Auto-redirecting to results in 1.5s...</div>
                                         </div>
                                         <button 
                                             onClick={() => { setLiveRunActive(false); setRunBanner(null); }} 
@@ -489,6 +490,7 @@ export default function TestFlowsPage() {
                                             <div>
                                                 <div style={{ fontWeight: "800", fontSize: "1.1rem" }}>Execution Failed</div>
                                                 <div style={{ fontSize: "0.85rem", opacity: 0.8 }}>Test completed with {liveResults.filter(r => r.status === "PASS").length} passed steps.</div>
+                                                <div style={{ fontSize: "0.75rem", color: "#ef4444", fontWeight: "600", marginTop: "4px" }}>Auto-redirecting to results in 1.5s...</div>
                                             </div>
                                         </div>
                                     </div>

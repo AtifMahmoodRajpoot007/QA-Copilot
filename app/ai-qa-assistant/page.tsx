@@ -41,12 +41,7 @@ export default function AIQAAssistantPage() {
 
     const [previewScreenshot, setPreviewScreenshot] = useState<string | null>(null);
 
-    // Live Run States
-    const [liveRunActive, setLiveRunActive] = useState(false);
-    const [liveSessionId, setLiveSessionId] = useState<string | null>(null);
-    const [liveSteps, setLiveSteps] = useState<any[]>([]);
-    const [liveRunStatus, setLiveRunStatus] = useState<"RUNNING" | "PASS" | "FAIL">("RUNNING");
-    const [liveScreenshot, setLiveScreenshot] = useState<string | null>(null);
+
     const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
     async function fetchHistory() {
@@ -91,11 +86,8 @@ export default function AIQAAssistantPage() {
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || "Execution failed");
 
-            setLiveSessionId(data.sessionId);
-            setLiveSteps([]);
-            setLiveRunStatus("RUNNING");
-            setLiveScreenshot(null);
-            setLiveRunActive(true);
+            // Playwright will launch a new actual browser window internally thanks to 'execution' mode.
+            // We just wait for it to finish and show a loader here.
 
             pollingRef.current = setInterval(async () => {
                 const pr = await fetch(`/api/flows/session/${data.sessionId}`);
@@ -104,12 +96,10 @@ export default function AIQAAssistantPage() {
                     if (pd.runStatus !== "RUNNING") {
                         if (pollingRef.current) clearInterval(pollingRef.current);
                         setRunning(false);
+                        // Fetch the final results properly formatting it for the UI
+                        setResults({ status: pd.runStatus.toLowerCase(), steps: pd.steps || [] });
                         fetchHistory();
-                    }
-                    setLiveSteps(pd.steps || []);
-                    setLiveRunStatus(pd.runStatus || "RUNNING");
-                    if (pd.latestScreenshot) {
-                        setLiveScreenshot(`data:image/png;base64,${pd.latestScreenshot}`);
+                        // Stay on "execution" tab
                     }
                 } else {
                     if (pollingRef.current) clearInterval(pollingRef.current);
@@ -195,6 +185,30 @@ export default function AIQAAssistantPage() {
                         </div>
 
                         <div style={{ padding: "24px", flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "16px" }}>
+                            {results && results.steps && results.steps.length > 0 && (
+                                (() => {
+                                    const lastStep = results.steps[results.steps.length - 1];
+                                    let errorMessage = results.status === "fail" 
+                                        ? "Execution failed unexpectedly."
+                                        : "Task completed successfully.";
+                                        
+                                    if (results.status === "fail" && lastStep.action === "fail") {
+                                        errorMessage = lastStep.reasoning || errorMessage;
+                                    } else if (results.status === "pass" && lastStep.action === "finish") {
+                                        errorMessage = lastStep.reasoning || errorMessage;
+                                    }
+                                    
+                                    return (
+                                        <div className="animate-fade-in" style={{ padding: "16px", background: results.status === "pass" ? "rgba(16,185,129,0.05)" : "rgba(239,68,68,0.05)", borderRadius: "12px", border: `1px solid ${results.status === "pass" ? "rgba(16,185,129,0.3)" : "rgba(239,68,68,0.3)"}`, borderLeft: `4px solid ${results.status === "pass" ? "#10b981" : "#ef4444"}`, marginBottom: "8px" }}>
+                                            <h4 style={{ fontSize: "0.85rem", fontWeight: "600", color: results.status === "pass" ? "#10b981" : "#ef4444", marginBottom: "8px", textTransform: "uppercase", display: "flex", alignItems: "center", gap: "6px" }}>
+                                                {results.status === "pass" ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />} 
+                                                Agent Outcome Log
+                                            </h4>
+                                            <p style={{ fontSize: "0.9rem", color: "var(--text-primary)", margin: 0, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{errorMessage}</p>
+                                        </div>
+                                    )
+                                })()
+                            )}
                             {!running && !results && !error && (
                                 <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", gap: "16px" }}>
                                     <MonitorCheck size={48} style={{ opacity: 0.3 }} />
@@ -293,6 +307,16 @@ export default function AIQAAssistantPage() {
                                         <p style={{ fontSize: "0.85rem", color: "var(--text-primary)", margin: 0, fontStyle: "italic" }}>"{selectedHistorySession.instruction}"</p>
                                     </div>
 
+                                    {selectedHistorySession.results?.errorMessage && (
+                                        <div style={{ marginBottom: "24px", padding: "16px", background: selectedHistorySession.results.status === "pass" ? "rgba(16,185,129,0.05)" : "rgba(239,68,68,0.05)", borderRadius: "12px", border: `1px solid ${selectedHistorySession.results.status === "pass" ? "rgba(16,185,129,0.3)" : "rgba(239,68,68,0.3)"}`, borderLeft: `4px solid ${selectedHistorySession.results.status === "pass" ? "#10b981" : "#ef4444"}` }}>
+                                            <h4 style={{ fontSize: "0.85rem", fontWeight: "600", color: selectedHistorySession.results.status === "pass" ? "#10b981" : "#ef4444", marginBottom: "8px", textTransform: "uppercase", display: "flex", alignItems: "center", gap: "6px" }}>
+                                                {selectedHistorySession.results.status === "pass" ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />} 
+                                                Agent Outcome Log
+                                            </h4>
+                                            <p style={{ fontSize: "0.9rem", color: "var(--text-primary)", margin: 0, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{selectedHistorySession.results.errorMessage}</p>
+                                        </div>
+                                    )}
+
                                     <h4 style={{ fontSize: "0.85rem", fontWeight: "600", color: "var(--text-muted)", marginBottom: "16px", textTransform: "uppercase" }}>Executed Actions</h4>
                                     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
                                         {selectedHistorySession.results?.steps?.map((step: any, i: number) => (
@@ -338,101 +362,7 @@ export default function AIQAAssistantPage() {
                 </div>
             )}
 
-            {/* Live Run Dashboard Overlay */}
-            {liveRunActive && (
-                <div style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(10, 10, 10, 0.9)", backdropFilter: "blur(12px)", display: "flex", alignItems: "center", justifyContent: "center", padding: "40px" }} className="animate-fade-in">
-                    <div style={{ width: "100%", maxWidth: "1200px", height: "85vh", display: "grid", gridTemplateColumns: "1fr 400px", gap: "24px" }}>
-                        
-                        {/* Browser Visual Side */}
-                        <div style={{ background: "#1a1a1a", borderRadius: "16px", overflow: "hidden", display: "flex", flexDirection: "column", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)" }}>
-                            <div style={{ padding: "12px 20px", background: "rgba(255,255,255,0.05)", borderBottom: "1px solid rgba(255,255,255,0.1)", display: "flex", alignItems: "center", gap: "12px" }}>
-                                <div style={{ display: "flex", gap: "6px" }}>
-                                    <div style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#ef4444" }} />
-                                    <div style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#f59e0b" }} />
-                                    <div style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#10b981" }} />
-                                </div>
-                                <div style={{ flex: 1, height: "28px", background: "rgba(0,0,0,0.3)", borderRadius: "6px", display: "flex", alignItems: "center", padding: "0 12px", fontSize: "0.8rem", color: "rgba(255,255,255,0.5)" }}>
-                                    {targetUrl}
-                                </div>
-                            </div>
-                            <div style={{ flex: 1, position: "relative", background: "#000", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
-                                {liveScreenshot ? (
-                                    <img src={liveScreenshot} alt="Live Browser" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-                                ) : (
-                                    <div style={{ textAlign: "center" }}>
-                                        <LoadingSpinner size={32} />
-                                        <p style={{ marginTop: "16px", color: "rgba(255,255,255,0.5)", fontSize: "0.9rem" }}>Connecting to agent session...</p>
-                                    </div>
-                                )}
-                                <div style={{ position: "absolute", top: "20px", right: "20px", padding: "8px 16px", background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", borderRadius: "30px", border: "1px solid rgba(255,255,255,0.1)", display: "flex", alignItems: "center", gap: "8px" }}>
-                                    <div className="pulse" style={{ width: "8px", height: "8px", borderRadius: "50%", background: liveRunStatus === "RUNNING" ? "#10b981" : "#64748b" }} />
-                                    <span style={{ fontSize: "0.75rem", fontWeight: "700", color: "white", textTransform: "uppercase" }}>
-                                        Agent: {liveRunStatus}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Progress Panel */}
-                        <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: "16px", display: "flex", flexDirection: "column", border: "1px solid rgba(255,255,255,0.1)", overflow: "hidden" }}>
-                            <div style={{ padding: "24px", borderBottom: "1px solid rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                                <h3 style={{ margin: 0, fontSize: "1.1rem", display: "flex", alignItems: "center", gap: "10px" }}>
-                                    <ListChecks size={20} color="#10b981" /> Agent Progress
-                                </h3>
-                                <button onClick={() => { setLiveRunActive(false); if(pollingRef.current) clearInterval(pollingRef.current); }} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.5)", cursor: "pointer" }}><X size={20} /></button>
-                            </div>
-
-                            <div style={{ flex: 1, overflowY: "auto", padding: "24px", display: "flex", flexDirection: "column", gap: "16px" }}>
-                                {liveSteps.length === 0 && (
-                                    <div style={{ textAlign: "center", padding: "40px", color: "rgba(255,255,255,0.3)" }}>
-                                        Initializing agent loop...
-                                    </div>
-                                )}
-                                {liveSteps.map((step, i) => (
-                                    <div key={i} className="animate-slide-up" style={{ padding: "16px", background: "rgba(255,255,255,0.02)", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.05)" }}>
-                                        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
-                                            <div style={{ width: "24px", height: "24px", borderRadius: "6px", background: "rgba(16, 185, 129, 0.1)", color: "#10b981", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", fontWeight: "700" }}>{i + 1}</div>
-                                            <span style={{ fontWeight: "700", textTransform: "uppercase", fontSize: "0.75rem", color: "#10b981" }}>{step.action}</span>
-                                        </div>
-                                        <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.8)", marginBottom: "8px" }}>{step.reasoning}</div>
-                                        {step.value && <div style={{ fontSize: "0.75rem", background: "rgba(0,0,0,0.2)", padding: "4px 8px", borderRadius: "4px", color: "rgba(255,255,255,0.5)", fontFamily: "monospace" }}>Value: {step.value}</div>}
-                                    </div>
-                                ))}
-                            </div>
-
-                            <div style={{ padding: "24px", background: "rgba(0,0,0,0.2)" }}>
-                                {liveRunStatus === "RUNNING" ? (
-                                    <div style={{ display: "flex", alignItems: "center", gap: "12px", color: "rgba(255,255,255,0.6)", fontSize: "0.9rem" }}>
-                                        <LoadingSpinner size={18} /> AI is deciding next action...
-                                    </div>
-                                ) : (
-                                    <div className="animate-slide-up">
-                                        {liveRunStatus === "PASS" ? (
-                                            <div style={{ background: "rgba(240, 246, 255, 1)", borderRadius: "12px", padding: "20px", display: "flex", alignItems: "center", gap: "16px", border: "1px solid rgba(219, 234, 254, 1)" }}>
-                                                <div style={{ width: "48px", height: "48px", borderRadius: "50%", background: "white", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.05)" }}>
-                                                    <div style={{ fontSize: "24px" }}>👌</div>
-                                                </div>
-                                                <div style={{ flex: 1 }}>
-                                                    <div style={{ fontWeight: "800", fontSize: "0.9rem", color: "#1e293b", letterSpacing: "0.05em", marginBottom: "2px" }}>AGENT FINISHED SUCCESSFULLY</div>
-                                                    <button onClick={() => { setLiveRunActive(false); setActiveTab("history"); fetchHistory(); }} style={{ background: "none", border: "none", padding: 0, color: "#334155", textDecoration: "underline", fontSize: "0.85rem", fontWeight: "600", cursor: "pointer" }}>View Details</button>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <div style={{ background: "rgba(239, 68, 68, 0.1)", borderRadius: "12px", padding: "16px", display: "flex", alignItems: "center", gap: "12px", border: "1px solid rgba(239, 68, 68, 0.2)" }}>
-                                                <AlertTriangle size={20} color="#ef4444" />
-                                                <div>
-                                                    <div style={{ fontWeight: "700", color: "#ef4444", fontSize: "0.9rem" }}>AGENT FAILED</div>
-                                                    <div style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.6)" }}>The agent could not complete the instruction.</div>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {/* Live Run Dashboard Overlay removed as it is now in a separate tab */}
         </div>
     );
 }

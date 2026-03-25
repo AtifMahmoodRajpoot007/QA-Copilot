@@ -1,0 +1,15 @@
+version: '3.9'
+services:
+  app:
+    build: .
+    ports:
+      - "3001:3000" # Next.js moved to 3001 in your logs if 3000 busy
+      - "5900:5900" # VNC access for headed Chrome
+    environment:
+      - NODE_ENV=development
+      - CHROME_PATH=/usr/bin/google-chrome
+      - DISPLAY=:99
+    volumes:
+      - .:/usr/src/app
+    shm_size: '1gb'
+    restart: unless-stopped

@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
         }
 
         const sessionId = Math.random().toString(36).substring(7);
-        const { browser } = await launchBrowser("background");
+        const { browser } = await launchBrowser("execution"); // Launch real live Chrome tab
         
         const context = await browser.newContext({ viewport: null });
         
@@ -211,12 +211,28 @@ export async function POST(req: NextRequest) {
                 const session = sessionStore.get(sessionId) as any;
                 if (session) {
                     await connectToDatabase();
+                    
+                    let errorMessage = "";
+                    const lastStep = session.steps.length > 0 ? session.steps[session.steps.length - 1] : null;
+                    if (session.runStatus === "FAIL") {
+                        if (session.consoleLogs && session.consoleLogs.length > 0) {
+                            errorMessage = session.consoleLogs.join(" | ");
+                        } else if (lastStep && lastStep.action === "fail") {
+                            errorMessage = lastStep.reasoning || "Agent failed to complete the task.";
+                        } else {
+                            errorMessage = "Execution failed unexpectedly.";
+                        }
+                    } else if (session.runStatus === "PASS" && lastStep && lastStep.action === "finish") {
+                        errorMessage = lastStep.reasoning || "Task completed successfully.";
+                    }
+
                     await QAAssistantSession.create({
                         userId: "demo-user",
                         url,
                         instruction,
                         results: {
                             status: session.runStatus.toLowerCase(),
+                            errorMessage,
                             steps: session.steps.map((s: any) => ({
                                 action: s.action,
                                 selector: s.selector,
