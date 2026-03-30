@@ -28,6 +28,17 @@ const PRIORITY_COLORS: Record<string, string> = {
 };
 
 function TestCaseCard({ tc, index }: { tc: TestCase; index: number }) {
+  const isFailureTest =
+    (tc.id || "").toLowerCase().includes("fail") ||
+    (tc.id || "").toLowerCase().includes("error") ||
+    (tc.title || "").toLowerCase().includes("fail") ||
+    (tc.title || "").toLowerCase().includes("error") ||
+    (tc.title || "").toLowerCase().includes("invalid");
+
+  const accentColor = isFailureTest ? "#ef4444" : "#10b981";
+  const accentBg = isFailureTest ? "rgba(239,68,68,0.05)" : "rgba(16,185,129,0.04)";
+  const accentBorder = isFailureTest ? "rgba(239,68,68,0.2)" : "rgba(16,185,129,0.15)";
+
   return (
     <div
       className="glass-card animate-fade-in"
@@ -35,10 +46,11 @@ function TestCaseCard({ tc, index }: { tc: TestCase; index: number }) {
         padding: "0",
         overflow: "hidden",
         background: "#0f172a", // Darker slate for the card background
-        border: "1px solid #1e293b",
+        border: `1px solid ${isFailureTest ? "rgba(239, 68, 68, 0.25)" : "#1e293b"}`,
         borderRadius: "12px",
         animationDelay: `${index * 0.06}s`,
         animationFillMode: "both",
+        boxShadow: isFailureTest ? "0 4px 20px -5px rgba(239, 68, 68, 0.12)" : "none",
       }}
     >
       {/* Card header section */}
@@ -50,6 +62,7 @@ function TestCaseCard({ tc, index }: { tc: TestCase; index: number }) {
           gap: "16px",
           borderBottom: "1px solid #1e293b",
           flexWrap: "wrap",
+          background: isFailureTest ? "rgba(239, 68, 68, 0.02)" : "transparent",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1, minWidth: 0 }}>
@@ -57,9 +70,12 @@ function TestCaseCard({ tc, index }: { tc: TestCase; index: number }) {
             style={{
               fontSize: "0.85rem",
               fontWeight: "600",
-              color: "#64748b",
+              color: isFailureTest ? "#f87171" : "#64748b",
               fontFamily: "monospace",
               letterSpacing: "0.02em",
+              background: isFailureTest ? "rgba(239, 68, 68, 0.1)" : "transparent",
+              padding: isFailureTest ? "2px 6px" : "0",
+              borderRadius: "4px",
             }}
           >
             {tc.id}
@@ -213,7 +229,7 @@ function TestCaseCard({ tc, index }: { tc: TestCase; index: number }) {
               >
                 <span
                   style={{
-                    color: "var(--accent-blue)",
+                    color: isFailureTest ? "#ef4444" : "var(--accent-blue)",
                     fontWeight: "700",
                     minWidth: "20px",
                   }}
@@ -230,8 +246,8 @@ function TestCaseCard({ tc, index }: { tc: TestCase; index: number }) {
         <div
           style={{
             padding: "20px 24px",
-            background: "rgba(16,185,129,0.04)",
-            border: "1px solid rgba(16,185,129,0.15)",
+            background: accentBg,
+            border: `1px solid ${accentBorder}`,
             borderRadius: "12px",
             display: "flex",
             gap: "16px",
@@ -243,21 +259,25 @@ function TestCaseCard({ tc, index }: { tc: TestCase; index: number }) {
               width: "28px",
               height: "28px",
               borderRadius: "50%",
-              background: "rgba(16,185,129,0.1)",
+              background: isFailureTest ? "rgba(239,68,68,0.1)" : "rgba(16,185,129,0.1)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               flexShrink: 0,
             }}
           >
-            <CheckCircle2 size={18} color="#10b981" />
+            {isFailureTest ? (
+              <AlertCircle size={18} color={accentColor} />
+            ) : (
+              <CheckCircle2 size={18} color={accentColor} />
+            )}
           </div>
           <div>
             <div
               style={{
                 fontSize: "0.75rem",
                 fontWeight: "800",
-                color: "#10b981",
+                color: accentColor,
                 textTransform: "uppercase",
                 letterSpacing: "0.1em",
                 marginBottom: "8px",

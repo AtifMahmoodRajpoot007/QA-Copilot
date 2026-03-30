@@ -58,15 +58,17 @@ const navItems = [
   {
     href: "/ai-smoke-tester",
     label: "AI Smoke Tester",
-    icon: Zap,
+    icon: ShieldCheck,
     color: "#f59e0b",
   },
+/*
   {
     href: "/ai-test-agent",
     label: "AI Test Agent",
     icon: MonitorCheck,
     color: "#10b981",
   },
+*/
 ];
 
 interface SidebarProps {
@@ -80,7 +82,7 @@ interface SidebarProps {
 export default function Sidebar({ isCollapsed, isMobile, isMobileOpen, onCloseMobile, onToggle }: SidebarProps) {
   const pathname = usePathname();
 
-  const desktopWidth = isCollapsed ? "84px" : "248px";
+  const desktopWidth = isCollapsed ? "80px" : "260px";
 
   return (
     <>
@@ -138,12 +140,15 @@ export default function Sidebar({ isCollapsed, isMobile, isMobileOpen, onCloseMo
         <div
           className="sidebar-logo"
           style={{
-            padding: isCollapsed ? "20px 14px" : "24px 20px",
+            height: "76px",
             borderBottom: "1px solid var(--border)",
             display: "flex",
             alignItems: "center",
-            justifyContent: isCollapsed ? "center" : "flex-start",
-            transition: "all 0.3s ease",
+            padding: "0 20px",
+            overflow: "hidden",
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)"
           }}
         >
           <div
@@ -156,50 +161,26 @@ export default function Sidebar({ isCollapsed, isMobile, isMobileOpen, onCloseMo
               alignItems: "center",
               justifyContent: "center",
               flexShrink: 0,
+              marginLeft: isCollapsed ? "2px" : "0px",
+              transition: "margin 0.3s cubic-bezier(0.4, 0, 0.2, 1)"
             }}
           >
             <Zap size={20} color="white" fill="white" />
           </div>
           <div
             style={{
-              overflow: "hidden",
-              whiteSpace: "nowrap",
               opacity: isCollapsed ? 0 : 1,
-              maxWidth: isCollapsed ? 0 : "150px",
-              marginLeft: isCollapsed ? 0 : "12px",
-              transition: "all 0.3s ease",
+              marginLeft: "14px",
+              transition: "opacity 0.2s ease",
             }}
           >
-            <div
-              style={{
-                fontSize: "0.95rem",
-                fontWeight: "700",
-                color: "var(--text-primary)",
-                lineHeight: 1.2,
-              }}
-            >
-              QA Copilot
-            </div>
-            <div
-              style={{
-                fontSize: "0.7rem",
-                color: "var(--text-muted)",
-                marginTop: "2px",
-              }}
-            >
-              AI Testing Assistant
-            </div>
+            <div style={{ fontSize: "1rem", fontWeight: "700", color: "var(--text-primary)", lineHeight: 1.2 }}>QA Copilot</div>
+            <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "2px" }}>AI Testing Assistant</div>
           </div>
         </div>
 
         {/* Navigation */}
-        <nav
-          style={{
-            padding: isCollapsed ? "12px 10px" : "12px 12px",
-            flex: 1,
-            marginTop: "10px",
-          }}
-        >
+        <nav style={{ padding: "16px", flex: 1, display: "flex", flexDirection: "column", gap: "2px" }}>
           <div
             style={{
               fontSize: "0.68rem",
@@ -207,11 +188,12 @@ export default function Sidebar({ isCollapsed, isMobile, isMobileOpen, onCloseMo
               fontWeight: "600",
               letterSpacing: "0.1em",
               textTransform: "uppercase",
-              padding: isCollapsed ? "0" : "8px 8px 4px",
+              padding: "0 8px",
+              marginBottom: "8px",
               overflow: "hidden",
               opacity: isCollapsed ? 0 : 1,
               maxHeight: isCollapsed ? 0 : "30px",
-              transition: "all 0.3s ease",
+              transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
               whiteSpace: "nowrap",
             }}
           >
@@ -227,47 +209,31 @@ export default function Sidebar({ isCollapsed, isMobile, isMobileOpen, onCloseMo
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  justifyContent: isCollapsed ? "center" : "flex-start",
-                  gap: isCollapsed ? "0" : "12px",
-                  padding: isCollapsed ? "12px 10px" : "10px 12px",
-                  borderRadius: "8px",
-                  marginBottom: "2px",
+                  width: isCollapsed ? "44px" : "100%",
+                  height: "44px",
+                  margin: "0 auto",
+                  padding: "0 12px",
+                  borderRadius: "10px",
                   textDecoration: "none",
-                  background: isActive ? `${color}18` : "transparent",
-                  border: isActive
-                    ? `1px solid ${color}30`
-                    : "1px solid transparent",
+                  background: isActive ? `${color}15` : "transparent",
+                  border: isActive ? `1px solid ${color}30` : "1px solid transparent",
                   color: isActive ? color : "var(--text-secondary)",
-                  fontWeight: isActive ? "600" : "400",
+                  fontWeight: isActive ? "600" : "500",
                   fontSize: "0.875rem",
-                  transition: "all 0.15s ease",
+                  transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                  overflow: "hidden",
+                  whiteSpace: "nowrap",
+                  flexShrink: 0
                 }}
               >
-                <Icon size={isCollapsed ? 20 : 16} style={{ flexShrink: 0, transition: "all 0.3s ease" }} />
-                <span
-                  style={{
-                    overflow: "hidden",
-                    whiteSpace: "nowrap",
-                    opacity: isCollapsed ? 0 : 1,
-                    maxWidth: isCollapsed ? 0 : "150px",
-                    transition: "all 0.3s ease",
-                  }}
-                >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "18px", flexShrink: 0 }}>
+                  <Icon size={18} style={{ color: isActive ? color : "var(--text-muted)" }} />
+                </div>
+                <div style={{ marginLeft: "14px", opacity: isCollapsed ? 0 : 1, transition: "opacity 0.2s ease", flex: 1 }}>
                   {label}
-                </span>
-                {isActive && (
-                  <div
-                    style={{
-                      marginLeft: "auto",
-                      width: "6px",
-                      height: "6px",
-                      borderRadius: "50%",
-                      background: color,
-                      opacity: isCollapsed ? 0 : 1,
-                      transition: "opacity 0.2s ease",
-                      flexShrink: 0,
-                    }}
-                  />
+                </div>
+                {isActive && !isCollapsed && (
+                  <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: color, flexShrink: 0 }} />
                 )}
               </Link>
             );
@@ -275,23 +241,26 @@ export default function Sidebar({ isCollapsed, isMobile, isMobileOpen, onCloseMo
         </nav>
 
         {/* Toggle Button */}
-        <div style={{ padding: isCollapsed ? "10px" : "10px 12px" }}>
+        {/* Toggle Button */}
+        <div style={{ padding: "16px", borderTop: "1px solid var(--border)" }}>
           <button
             onClick={onToggle}
             className="sidebar-toggle-btn"
             style={{
-              width: "100%",
+              width: isCollapsed ? "44px" : "100%",
+              height: "44px",
+              margin: "0 auto",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              padding: "8px 0",
               background: "rgba(255, 255, 255, 0.03)",
-              border: "1px solid rgba(255, 255, 255, 0.1)",
-              borderRadius: "6px",
+              border: "1px solid rgba(255, 255, 255, 0.08)",
+              borderRadius: "8px",
               color: "var(--text-secondary)",
               cursor: "pointer",
-              transition: "all 0.2s"
+              transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)"
             }}
+            title="Toggle Sidebar"
           >
             <Menu size={18} />
           </button>
@@ -301,29 +270,20 @@ export default function Sidebar({ isCollapsed, isMobile, isMobileOpen, onCloseMo
         <div
           className="sidebar-footer"
           style={{
-            padding: isCollapsed ? "14px 10px" : "16px 20px",
+            padding: "16px 20px",
             borderTop: "1px solid var(--border)",
             fontSize: "0.72rem",
             color: "var(--text-muted)",
-            transition: "all 0.3s ease",
+            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
             textAlign: isCollapsed ? "center" : "left",
+            overflow: "hidden",
+            whiteSpace: "nowrap"
           }}
         >
-          <div
-            style={{
-              overflow: "hidden",
-              whiteSpace: "nowrap",
-              opacity: isCollapsed ? 0 : 1,
-              maxHeight: isCollapsed ? 0 : "40px",
-              transition: "all 0.3s ease",
-            }}
-          >
-            <div style={{ marginBottom: "2px" }}>Powered by Gemini 2.5 Flash</div>
-            <div>MVP v1.0</div>
+          <div style={{ opacity: isCollapsed ? 0 : 1, transition: "opacity 0.2s ease" }}>
+            <div style={{ marginBottom: "2px" }}>Powered by Gemini 2.5</div>
+             <div>MVP v1.0</div>
           </div>
-          {isCollapsed && (
-            <div style={{ textAlign: "center", animation: "fadeIn 0.3s ease", marginTop: "4px" }}>v1.0</div>
-          )}
         </div>
       </aside>
 

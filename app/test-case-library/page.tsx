@@ -11,6 +11,7 @@ import {
     ClipboardList,
     Search,
     CheckCircle2,
+    AlertCircle,
     ArrowRight,
 } from "lucide-react";
 import LoadingSpinner from "@/components/ui/LoadingSpinner";
@@ -55,6 +56,17 @@ function PriorityBadge({ priority }: { priority: string }) {
 }
 
 function TestCaseCard({ tc, index }: { tc: TestCase; index: number }) {
+    const isFailureTest =
+        (tc.id || "").toLowerCase().includes("fail") ||
+        (tc.id || "").toLowerCase().includes("error") ||
+        (tc.title || "").toLowerCase().includes("fail") ||
+        (tc.title || "").toLowerCase().includes("error") ||
+        (tc.title || "").toLowerCase().includes("invalid");
+
+    const accentColor = isFailureTest ? "#ef4444" : "#10b981";
+    const accentBg = isFailureTest ? "rgba(239,68,68,0.05)" : "rgba(16,185,129,0.05)";
+    const accentBorder = isFailureTest ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.15)";
+
     return (
         <div
             className="animate-fade-in"
@@ -65,6 +77,7 @@ function TestCaseCard({ tc, index }: { tc: TestCase; index: number }) {
                 overflow: "hidden",
                 animationDelay: `${index * 0.05}s`,
                 animationFillMode: "both",
+                boxShadow: isFailureTest ? "0 4px 20px -5px rgba(239, 68, 68, 0.15)" : "none",
             }}
         >
             {/* Card Header */}
@@ -76,14 +89,15 @@ function TestCaseCard({ tc, index }: { tc: TestCase; index: number }) {
                     alignItems: "center",
                     gap: "12px",
                     flexWrap: "wrap",
+                    background: isFailureTest ? "rgba(239, 68, 68, 0.02)" : "transparent",
                 }}
             >
                 <span
                     style={{
                         fontSize: "0.72rem",
                         fontFamily: "monospace",
-                        color: "#475569",
-                        background: "#1e293b",
+                        color: isFailureTest ? "#ef4444" : "#475569",
+                        background: isFailureTest ? "rgba(239, 68, 68, 0.1)" : "#1e293b",
                         padding: "3px 8px",
                         borderRadius: "4px",
                         letterSpacing: "0.04em",
@@ -170,9 +184,9 @@ function TestCaseCard({ tc, index }: { tc: TestCase; index: number }) {
                                         width: "22px",
                                         height: "22px",
                                         borderRadius: "50%",
-                                        background: "rgba(99,102,241,0.15)",
-                                        border: "1px solid rgba(99,102,241,0.25)",
-                                        color: "#818cf8",
+                                        background: isFailureTest ? "rgba(239, 68, 68, 0.1)" : "rgba(99,102,241,0.15)",
+                                        border: `1px solid ${isFailureTest ? "rgba(239, 68, 68, 0.2)" : "rgba(99,102,241,0.25)"}`,
+                                        color: isFailureTest ? "#ef4444" : "#818cf8",
                                         fontSize: "0.72rem",
                                         fontWeight: "700",
                                         display: "flex",
@@ -202,25 +216,29 @@ function TestCaseCard({ tc, index }: { tc: TestCase; index: number }) {
                 <div
                     style={{
                         padding: "14px 16px",
-                        background: "rgba(16,185,129,0.05)",
-                        border: "1px solid rgba(16,185,129,0.15)",
+                        background: accentBg,
+                        border: `1px solid ${accentBorder}`,
                         borderRadius: "8px",
                         display: "flex",
                         gap: "12px",
                         alignItems: "flex-start",
                     }}
                 >
-                    <CheckCircle2
-                        size={16}
-                        color="#10b981"
-                        style={{ flexShrink: 0, marginTop: "2px" }}
-                    />
+                    {isFailureTest ? (
+                        <AlertCircle size={16} color={accentColor} style={{ flexShrink: 0, marginTop: "2px" }} />
+                    ) : (
+                        <CheckCircle2
+                            size={16}
+                            color={accentColor}
+                            style={{ flexShrink: 0, marginTop: "2px" }}
+                        />
+                    )}
                     <div>
                         <div
                             style={{
                                 fontSize: "0.7rem",
                                 fontWeight: "700",
-                                color: "#10b981",
+                                color: accentColor,
                                 textTransform: "uppercase",
                                 letterSpacing: "0.08em",
                                 marginBottom: "5px",
