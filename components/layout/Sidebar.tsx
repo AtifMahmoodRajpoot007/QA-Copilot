@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -19,6 +19,8 @@ import {
   BookOpen,
   History,
   PlayCircle,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 
 const navItems = [
@@ -29,13 +31,13 @@ const navItems = [
     color: "#3b82f6",
   },
   {
-    href: "/test-flows",
+    href: "/automated-tests",
     label: "Automated Tests",
     icon: PlayCircle,
     color: "#10b981",
   },
   {
-    href: "/test-cases",
+    href: "/test-cases-generator",
     label: "Test Case Generator",
     icon: ClipboardList,
     color: "#8b5cf6",
@@ -46,85 +48,47 @@ const navItems = [
     icon: Library,
     color: "#06b6d4",
   },
-  { href: "/bug-report", label: "Bug Report Enhancer", icon: Bug, color: "#f59e0b" },
+  { href: "/bug-report-enhancer", label: "Bug Report Enhancer", icon: Bug, color: "#f59e0b" },
   {
-    href: "/regression",
+    href: "/regression-analyzer",
     label: "Regression Analyzer",
     icon: GitMerge,
     color: "#1b9e77",
   },
   {
-    href: "/smoke-tester",
+    href: "/ai-smoke-tester",
     label: "AI Smoke Tester",
-    icon: ShieldCheck,
+    icon: Zap,
     color: "#f59e0b",
   },
   {
-    href: "/ai-qa-assistant",
+    href: "/ai-test-agent",
     label: "AI Test Agent",
     icon: MonitorCheck,
     color: "#10b981",
   },
 ];
 
-export default function Sidebar() {
-  const pathname = usePathname();
-  const [isOpen, setIsOpen] = useState(false);
+interface SidebarProps {
+  isCollapsed: boolean;
+  isMobile: boolean;
+  isMobileOpen: boolean;
+  onCloseMobile: () => void;
+  onToggle: () => void;
+}
 
-  const toggleSidebar = () => setIsOpen(!isOpen);
+export default function Sidebar({ isCollapsed, isMobile, isMobileOpen, onCloseMobile, onToggle }: SidebarProps) {
+  const pathname = usePathname();
+
+  const desktopWidth = isCollapsed ? "84px" : "248px";
 
   return (
     <>
-      {/* Mobile Top Bar */}
-      <div
-        className="mobile-only"
-        style={{
-          height: "60px",
-          background: "var(--bg-secondary)",
-          borderBottom: "1px solid var(--border)",
-          display: "flex",
-          alignItems: "center",
-          padding: "0 20px",
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          zIndex: 40,
-        }}
-      >
-        <button
-          onClick={toggleSidebar}
-          style={{
-            background: "transparent",
-            border: "none",
-            color: "var(--text-primary)",
-            cursor: "pointer",
-            padding: "8px",
-            marginLeft: "-8px",
-          }}
-        >
-          {isOpen ? <X size={24} /> : <Menu size={24} />}
-        </button>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            marginLeft: "12px",
-          }}
-        >
-          <Zap size={20} color="#3b82f6" fill="#3b82f6" />
-          <span style={{ fontWeight: "700", fontSize: "0.95rem" }}>
-            QA Copilot
-          </span>
-        </div>
-      </div>
-
       {/* Backdrop */}
-      {isOpen && (
+      {isMobile && isMobileOpen && (
         <div
-          onClick={toggleSidebar}
-          className="mobile-only"
+          onClick={onCloseMobile}
+          className="sidebar-backdrop"
           style={{
             position: "fixed",
             inset: 0,
@@ -137,9 +101,10 @@ export default function Sidebar() {
 
       {/* Sidebar Container */}
       <aside
-        className="sidebar-container"
+        className={`sidebar-container app-sidebar ${isCollapsed ? "collapsed" : "expanded"} ${isMobileOpen ? "mobile-open" : ""
+          }`}
         style={{
-          width: "var(--sidebar-width)",
+          width: isMobile ? "280px" : desktopWidth,
           minHeight: "100dvh",
           background: "var(--bg-secondary)",
           borderRight: "1px solid var(--border)",
@@ -147,7 +112,7 @@ export default function Sidebar() {
           flexDirection: "column",
           padding: "0",
           flexShrink: 0,
-          transition: "transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+          transition: "width 0.28s ease, transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
           position: "relative",
           zIndex: 50,
         }}
@@ -156,24 +121,29 @@ export default function Sidebar() {
           .sidebar-container {
             position: relative;
           }
-          @media (max-width: 1024px) {
+          @media (max-width: 768px) {
             .sidebar-container {
               position: fixed;
+              top: 0;
+              left: 0;
+              bottom: 0;
               width: 280px !important;
-              transform: ${isOpen ? "translateX(0)" : "translateX(-100%)"};
-              box-shadow: ${isOpen ? "20px 0 50px rgba(0,0,0,0.5)" : "none"};
+              transform: ${isMobileOpen ? "translateX(0)" : "translateX(-100%)"};
+              box-shadow: ${isMobileOpen ? "20px 0 50px rgba(0,0,0,0.5)" : "none"};
+              z-index: 60;
             }
           }
         `}</style>
         {/* Logo */}
         <div
-          className="desktop-only"
+          className="sidebar-logo"
           style={{
-            padding: "24px 20px",
+            padding: isCollapsed ? "20px 14px" : "24px 20px",
             borderBottom: "1px solid var(--border)",
             display: "flex",
             alignItems: "center",
-            gap: "12px",
+            justifyContent: isCollapsed ? "center" : "flex-start",
+            transition: "all 0.3s ease",
           }}
         >
           <div
@@ -190,7 +160,16 @@ export default function Sidebar() {
           >
             <Zap size={20} color="white" fill="white" />
           </div>
-          <div>
+          <div
+            style={{
+              overflow: "hidden",
+              whiteSpace: "nowrap",
+              opacity: isCollapsed ? 0 : 1,
+              maxWidth: isCollapsed ? 0 : "150px",
+              marginLeft: isCollapsed ? 0 : "12px",
+              transition: "all 0.3s ease",
+            }}
+          >
             <div
               style={{
                 fontSize: "0.95rem",
@@ -214,7 +193,13 @@ export default function Sidebar() {
         </div>
 
         {/* Navigation */}
-        <nav style={{ padding: "12px 12px", flex: 1, marginTop: "10px" }}>
+        <nav
+          style={{
+            padding: isCollapsed ? "12px 10px" : "12px 12px",
+            flex: 1,
+            marginTop: "10px",
+          }}
+        >
           <div
             style={{
               fontSize: "0.68rem",
@@ -222,7 +207,12 @@ export default function Sidebar() {
               fontWeight: "600",
               letterSpacing: "0.1em",
               textTransform: "uppercase",
-              padding: "8px 8px 4px",
+              padding: isCollapsed ? "0" : "8px 8px 4px",
+              overflow: "hidden",
+              opacity: isCollapsed ? 0 : 1,
+              maxHeight: isCollapsed ? 0 : "30px",
+              transition: "all 0.3s ease",
+              whiteSpace: "nowrap",
             }}
           >
             Features
@@ -233,12 +223,13 @@ export default function Sidebar() {
               <Link
                 key={href}
                 href={href}
-                onClick={() => setIsOpen(false)}
+                onClick={onCloseMobile}
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: "12px",
-                  padding: "10px 12px",
+                  justifyContent: isCollapsed ? "center" : "flex-start",
+                  gap: isCollapsed ? "0" : "12px",
+                  padding: isCollapsed ? "12px 10px" : "10px 12px",
                   borderRadius: "8px",
                   marginBottom: "2px",
                   textDecoration: "none",
@@ -252,8 +243,18 @@ export default function Sidebar() {
                   transition: "all 0.15s ease",
                 }}
               >
-                <Icon size={16} />
-                {label}
+                <Icon size={isCollapsed ? 20 : 16} style={{ flexShrink: 0, transition: "all 0.3s ease" }} />
+                <span
+                  style={{
+                    overflow: "hidden",
+                    whiteSpace: "nowrap",
+                    opacity: isCollapsed ? 0 : 1,
+                    maxWidth: isCollapsed ? 0 : "150px",
+                    transition: "all 0.3s ease",
+                  }}
+                >
+                  {label}
+                </span>
                 {isActive && (
                   <div
                     style={{
@@ -262,6 +263,9 @@ export default function Sidebar() {
                       height: "6px",
                       borderRadius: "50%",
                       background: color,
+                      opacity: isCollapsed ? 0 : 1,
+                      transition: "opacity 0.2s ease",
+                      flexShrink: 0,
                     }}
                   />
                 )}
@@ -270,22 +274,59 @@ export default function Sidebar() {
           })}
         </nav>
 
+        {/* Toggle Button */}
+        <div style={{ padding: isCollapsed ? "10px" : "10px 12px" }}>
+          <button
+            onClick={onToggle}
+            className="sidebar-toggle-btn"
+            style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "8px 0",
+              background: "rgba(255, 255, 255, 0.03)",
+              border: "1px solid rgba(255, 255, 255, 0.1)",
+              borderRadius: "6px",
+              color: "var(--text-secondary)",
+              cursor: "pointer",
+              transition: "all 0.2s"
+            }}
+          >
+            <Menu size={18} />
+          </button>
+        </div>
+
         {/* Footer */}
         <div
+          className="sidebar-footer"
           style={{
-            padding: "16px 20px",
+            padding: isCollapsed ? "14px 10px" : "16px 20px",
             borderTop: "1px solid var(--border)",
             fontSize: "0.72rem",
             color: "var(--text-muted)",
+            transition: "all 0.3s ease",
+            textAlign: isCollapsed ? "center" : "left",
           }}
         >
-          <div style={{ marginBottom: "2px" }}>Powered by Gemini 2.5 Flash</div>
-          <div>MVP v1.0</div>
+          <div
+            style={{
+              overflow: "hidden",
+              whiteSpace: "nowrap",
+              opacity: isCollapsed ? 0 : 1,
+              maxHeight: isCollapsed ? 0 : "40px",
+              transition: "all 0.3s ease",
+            }}
+          >
+            <div style={{ marginBottom: "2px" }}>Powered by Gemini 2.5 Flash</div>
+            <div>MVP v1.0</div>
+          </div>
+          {isCollapsed && (
+            <div style={{ textAlign: "center", animation: "fadeIn 0.3s ease", marginTop: "4px" }}>v1.0</div>
+          )}
         </div>
       </aside>
 
-      {/* Spacer for fixed top bar on mobile */}
-      <div className="mobile-only" style={{ height: "60px" }} />
     </>
   );
 }

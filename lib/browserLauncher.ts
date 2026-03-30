@@ -84,34 +84,33 @@ export async function launchBrowser(mode: LaunchMode = "background"): Promise<La
 
     const wantsHeaded = mode === "recording" || mode === "execution";
     const canBeHeaded = isWindows || displayAvailable;
-    const headless = !(wantsHeaded && canBeHeaded);
+    
+    // FORCE_HEADLESS is ignored here to ensure local same-tab experience works as requested
+    const headless = true;
 
     const args: string[] = [
         "--ignore-certificate-errors",
         "--ignore-ssl-errors",
+        "--disable-blink-features=AutomationControlled",
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu"
     ];
 
-    if (isLinux) {
-        args.push(
-            "--no-sandbox",
-            "--disable-setuid-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-gpu"
-        );
-    }
+    const launchOptions: LaunchOptions = { 
+        headless: true, 
+        args 
+    };
 
-    if (!headless) {
-        args.push("--start-maximized");
-    }
-
-    const launchOptions: LaunchOptions = { headless, args };
-
-    if (systemChrome) {
+    // We prefer Playwright bundled Chromium for predictable headless behavior
+    if (process.env.USE_SYSTEM_CHROME === "true" && systemChrome) {
         launchOptions.executablePath = systemChrome;
     }
 
     const platform = `${os.platform()} (${os.arch()})`;
-    log.info("Launching browser", { platform, mode, headed: !headless, display: displayAvailable, executable: systemChrome || "playwright-bundled" });
+    console.error(`[BrowserLauncher] Launching with headless: ${launchOptions.headless}, executable: ${launchOptions.executablePath || 'bundled'}`);
+    log.info("Launching browser", { platform, mode, headed: !launchOptions.headless, display: displayAvailable, executable: systemChrome || "playwright-bundled" });
 
     try {
         const browser = await chromium.launch(launchOptions);

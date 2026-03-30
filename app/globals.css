@@ -20,6 +20,7 @@
 
   /* Responsive tokens */
   --sidebar-width: 240px;
+  --sidebar-collapsed-width: 84px;
   --dash-padding: 40px;
   --container-max-width: 1200px;
 }
@@ -326,27 +327,10 @@ textarea {
 /* Responsiveness */
 @media (max-width: 1024px) {
   :root {
-    --sidebar-width: 0px;
     --dash-padding: 32px;
   }
-
-  .sidebar-container {
-    position: fixed !important;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    width: 280px !important;
-    transform: translateX(-100%);
-    z-index: 100 !important;
-    box-shadow: none;
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  .sidebar-container.open {
-    transform: translateX(0);
-    box-shadow: 20px 0 50px rgba(0, 0, 0, 0.5);
-  }
 }
+
 
 @media (max-width: 768px) {
   :root {
@@ -380,13 +364,43 @@ textarea {
   display: flex !important;
 }
 
-@media (max-width: 1024px) {
+.mobile-topbar,
+.mobile-topbar-spacer,
+.sidebar-backdrop {
+  display: none;
+}
+
+.app-main {
+  transition: margin-left 0.28s ease, width 0.28s ease;
+}
+
+@media (min-width: 769px) {
+  .app-main {
+    padding-top: 0 !important;
+  }
+}
+
+@media (max-width: 768px) {
   .mobile-only {
     display: flex !important;
   }
 
   .desktop-only {
     display: none !important;
+  }
+
+  .mobile-topbar {
+    display: flex !important;
+  }
+
+  .mobile-topbar-spacer {
+    display: block !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .sidebar-backdrop {
+    display: block !important;
   }
 }
 
@@ -423,14 +437,67 @@ textarea {
   width: 100%;
 }
 
-@media (max-width: 1024px) {
-  .page-container {
-    padding-top: calc(60px + var(--dash-padding));
-  }
-}
-
 /* Input overflow fix */
 .input-field,
 textarea {
   max-width: 100%;
+}
+
+body.recording-mode {
+  overflow: hidden !important;
+  height: 100vh !important;
+}
+
+.immersive-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: fade-in 0.3s ease-out;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+body.recording-mode .app-sidebar,
+body.recording-mode header.mobile-topbar {
+  display: none !important;
+}
+
+body.recording-mode .app-main {
+  margin-left: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+body.recording-mode .page-container {
+  padding: 0 !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  width: 100% !important;
+}
+
+@keyframes ripple-out {
+  0% {
+    transform: translate(-50%, -50%) scale(0.5);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(2.5);
+    opacity: 0;
+  }
 }

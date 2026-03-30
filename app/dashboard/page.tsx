@@ -266,7 +266,7 @@ export default function DashboardPage() {
           value={loading ? null : (stats?.totalSmokeTests ?? 0)}
           icon={ShieldCheck}
           color="#f59e0b"
-          secondary={stats ? `${stats.smokeSuccessRate}% Success · ${stats.avgSmokeLoadTime}ms Avg` : undefined}
+          secondary={stats && (stats.totalSmokeTests ?? 0) > 0 ? `${stats.smokeSuccessRate}% Success · ${stats.avgSmokeLoadTime}ms Avg` : undefined}
         />
         <StatCard
           label="Automated Tests"
@@ -279,7 +279,7 @@ export default function DashboardPage() {
           value={loading ? null : (stats?.totalAssistantSessions ?? 0)}
           icon={MonitorCheck}
           color="#10b981"
-          secondary={stats ? `${stats.assistantSuccessRate}% Success` : undefined}
+          secondary={stats && (stats.totalAssistantSessions ?? 0) > 0 ? `${stats.assistantSuccessRate}% Success` : undefined}
         />
         <StatCard
           label="Total Time Saved"

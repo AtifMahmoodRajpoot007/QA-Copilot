@@ -179,96 +179,7 @@ const INJECT_SCRIPT = `
         });
     }, true);
 
-    // --- Injected Stop Button ---
-    function injectStopButton() {
-        if (document.getElementById('__qa_stop_container')) return;
-        if (!document.body) {
-            setTimeout(injectStopButton, 50);
-            return;
-        }
-
-        const container = document.createElement('div');
-        container.id = '__qa_stop_container';
-        container.style.cssText = 'position: fixed; bottom: 24px; right: 24px; z-index: 2147483647; display: flex; align-items: center; gap: 14px; font-family: system-ui, -apple-system, sans-serif; pointer-events: none; opacity: 0; transform: translateX(20px); transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);';
-        
-        const stopBtn = document.createElement('button');
-        stopBtn.id = '__qa_stop_btn';
-        stopBtn.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="2" ry="2"></rect></svg>';
-        stopBtn.style.cssText = 'width: 56px; height: 56px; border-radius: 50%; background: #ef4444; border: 3px solid white; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); pointer-events: auto; padding: 0; outline: none; margin: 0; position: relative;';
-        
-        const tooltip = document.createElement('div');
-        tooltip.innerText = 'Click to stop';
-        tooltip.style.cssText = 'background: #1e293b; color: white; padding: 10px 16px; border-radius: 8px; font-weight: 600; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); opacity: 0; transform: translateX(10px); transition: all 0.3s ease; pointer-events: none; white-space: nowrap; position: relative; display: flex; align-items: center;';
-        
-        // Tooltip arrow
-        const arrow = document.createElement('div');
-        arrow.style.cssText = 'position: absolute; right: -6px; top: 50%; transform: translateY(-50%); width: 12px; height: 12px; background: #1e293b; rotate: 45deg; border-radius: 2px;';
-        tooltip.appendChild(arrow);
-        
-        // Tooltip first, then button to keep it on the left
-        container.appendChild(tooltip);
-        container.appendChild(stopBtn);
-        
-        document.body.appendChild(container);
-
-        // Slide in animation
-        requestAnimationFrame(() => {
-            container.style.opacity = '1';
-            container.style.transform = 'translateX(0)';
-        });
-
-        // Initial tooltip display for 2 seconds - ONLY IF NOT ALREADY SHOWN IN THIS SESSION
-        let hideTimeout;
-        const alreadyShown = sessionStorage.getItem('__qa_tooltip_shown');
-        
-        if (!alreadyShown) {
-            setTimeout(() => {
-                tooltip.style.opacity = '1';
-                tooltip.style.transform = 'translateX(0)';
-                sessionStorage.setItem('__qa_tooltip_shown', 'true');
-                hideTimeout = setTimeout(() => {
-                    tooltip.style.opacity = '0';
-                    tooltip.style.transform = 'translateX(10px)';
-                }, 2000);
-            }, 600);
-        }
-        
-        stopBtn.addEventListener('mouseenter', () => {
-            clearTimeout(hideTimeout);
-            stopBtn.style.transform = 'scale(1.1) rotate(90deg)';
-            stopBtn.style.background = '#dc2626';
-            tooltip.style.opacity = '1';
-            tooltip.style.transform = 'translateX(0)';
-        });
-        
-        stopBtn.addEventListener('mouseleave', () => {
-            stopBtn.style.transform = 'scale(1) rotate(0deg)';
-            stopBtn.style.background = '#ef4444';
-            tooltip.style.opacity = '0';
-            tooltip.style.transform = 'translateX(10px)';
-        });
-        
-        stopBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            stopBtn.style.transform = 'scale(0.9)';
-            if (window.__qaStopRecordingSession) {
-                window.__qaStopRecordingSession();
-                stopBtn.style.background = '#991b1b';
-                tooltip.innerText = 'Stopping...';
-                tooltip.style.opacity = '1';
-                tooltip.style.transform = 'translateX(0)';
-            }
-        });
-    }
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', injectStopButton);
-    } else {
-        injectStopButton();
-    }
-
-
+    // Floating stop button removed as per requirements
 })();
 `;
 
@@ -285,7 +196,7 @@ export async function POST(req: NextRequest) {
         const context = await browser.newContext({
             ignoreHTTPSErrors: true,
             userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-            viewport: null, // allows resizing to full window
+            viewport: { width: 1600, height: 900 },
         });
 
         // Expose function so the injected browser button can stop the session
@@ -301,6 +212,15 @@ export async function POST(req: NextRequest) {
         });
 
         const page = await context.newPage();
+
+        // Start CDP Screencast
+        const client = await context.newCDPSession(page);
+        await client.send('Page.startScreencast', { format: 'jpeg', quality: 60 });
+        client.on('Page.screencastFrame', async (payload) => {
+            const s = sessionStore.get(sessionId);
+            if (s) s.latestScreenshot = payload.data;
+            await client.send('Page.screencastFrameAck', { sessionId: payload.sessionId }).catch(()=>{});
+        });
 
         // Inject recorder on every page load
         await context.addInitScript(INJECT_SCRIPT);
@@ -375,11 +295,7 @@ export async function POST(req: NextRequest) {
                     s.steps.push(step);
                 }
 
-                // Take screenshot occasionally to not lag the polling thread
-                if (Math.random() > 0.5) {
-                    const scBuf = await s.page.screenshot({ fullPage: false, type: 'jpeg', quality: 50 }).catch(() => null);
-                    if (scBuf) s.latestScreenshot = scBuf.toString("base64");
-                }
+                // Screencast is handled via CDP, no need to take blocking screenshots here.
             } catch (_) { }
         }, 400); // 🚀 Faster polling loop for near-instant recording feedback
 

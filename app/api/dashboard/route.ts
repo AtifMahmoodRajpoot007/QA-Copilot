@@ -37,7 +37,7 @@ export async function GET() {
         const avgSmokeLoadTime = Math.round(smokeTestStats[0]?.avgLoadTime || 0);
         const smokeSuccessRate = totalSmokeTests > 0
             ? Math.round((smokeTestStats[0]?.passCount / totalSmokeTests) * 100)
-            : 100;
+            : 0;
 
         // AI Assistant Metrics — results is an embedded object (not array), use direct $group
         const assistantStats = await QAAssistantSession.aggregate([
@@ -54,7 +54,7 @@ export async function GET() {
 
         const assistantSuccessRate = assistantStats[0]?.totalTests > 0
             ? Math.round((assistantStats[0]?.passCount / assistantStats[0]?.totalTests) * 100)
-            : 100;
+            : 0;
 
         // Automated test run pass rate (from FlowRun collection)
         const flowRunStats = await FlowRun.aggregate([
